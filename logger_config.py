@@ -48,7 +48,11 @@ class ColoredFormatter(logging.Formatter):
                 # 启用 ANSI 转义序列
                 kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
                 return True
-            except:
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                # 捕获所有其他异常（如 AttributeError, OSError 等）
+                # 在旧版 Windows 或无权限时可能失败
                 return False
         return True
     
