@@ -130,8 +130,9 @@ class VADService(BaseService):
         # 尝试加载 Pipecat 的 Silero VAD
         self._silero_vad = None
         self._use_silero = False
+        self._prev_vad_state = None  # 保存上一次的 VAD 状态用于检测转换
         try:
-            from pipecat.vad.silero import SileroVADAnalyzer
+            from pipecat.vad.silero import SileroVADAnalyzer, VADState
             self._silero_vad = SileroVADAnalyzer(
                 confidence=self.threshold,
                 min_silence_duration_ms=self.silence_duration_ms,
@@ -139,6 +140,7 @@ class VADService(BaseService):
                 sample_rate=16000
             )
             self._use_silero = True
+            self._prev_vad_state = VADState.QUIET  # 初始化为静音状态
             logger.info("✅ 使用 Pipecat Silero VAD (高精度)")
         except ImportError:
             logger.warning("⚠️  Pipecat Silero VAD 不可用，使用简单的能量检测 VAD")
@@ -181,25 +183,33 @@ class VADService(BaseService):
                 self._silence_frames = 0
             else:
                 try:
+                    from pipecat.vad.silero import VADState
+                    
                     # Silero VAD 需要归一化到 [-1, 1] 的 float32
                     normalized_audio = audio_array / 32768.0
                     
-                    # Silero VAD 分析
-                    vad_result = self._silero_vad.analyze_audio(normalized_audio)
+                    # Silero VAD 分析，返回 VADState 枚举
+                    vad_state = self._silero_vad.analyze_audio(normalized_audio)
                     
-                    # vad_result 包含 'speech_started', 'speech_ended' 等事件
-                    if vad_result.get('speech_started') and not self._is_speaking:
+                    # 检测状态转换
+                    # QUIET → SPEAKING: 用户开始说话
+                    if self._prev_vad_state == VADState.QUIET and vad_state == VADState.SPEAKING:
                         self._is_speaking = True
                         if self._on_speech_start:
                             await self._on_speech_start()
+                        self._prev_vad_state = vad_state
                         return UserStartedSpeakingFrame()
                     
-                    elif vad_result.get('speech_ended') and self._is_speaking:
+                    # SPEAKING → QUIET: 用户停止说话
+                    elif self._prev_vad_state == VADState.SPEAKING and vad_state == VADState.QUIET:
                         self._is_speaking = False
                         if self._on_speech_end:
                             await self._on_speech_end()
+                        self._prev_vad_state = vad_state
                         return UserStoppedSpeakingFrame()
                     
+                    # 更新状态
+                    self._prev_vad_state = vad_state
                     return frame
                 except Exception:
                     logger.exception("Silero VAD 处理错误，回退到能量检测")
