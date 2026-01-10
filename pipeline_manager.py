@@ -114,26 +114,18 @@ class BaseService(ABC):
 
 
 class VADService(BaseService):
-    """语音活动检测服务 - 基于能量的语音活动检测"""
+    """语音活动检测服务"""
     
     def __init__(self, threshold: float = 0.5, 
                  silence_duration_ms: int = 500,
                  prefix_padding_ms: int = 300):
-        self.threshold = threshold  # 0.0-1.0，越高越不敏感
+        self.threshold = threshold
         self.silence_duration_ms = silence_duration_ms
         self.prefix_padding_ms = prefix_padding_ms
         self._is_speaking = False
-        self._accepting_audio = False  # 是否接收音频进行处理
         self._silence_frames = 0
-        self._speech_frames = 0  # 连续语音帧计数
-        self._min_speech_frames = 3  # 最少连续语音帧数（避免误触发）
         self._on_speech_start: Optional[Callable[[], Awaitable[None]]] = None
         self._on_speech_end: Optional[Callable[[], Awaitable[None]]] = None
-        
-        # 动态能量阈值（自适应背景噪音）
-        self._energy_threshold = 500.0  # 初始阈值
-        self._background_energy = 0.0
-        self._frame_count = 0
     
     def on_speech_start(self, callback: Callable[[], Awaitable[None]]):
         """设置语音开始回调"""
@@ -160,73 +152,31 @@ class VADService(BaseService):
         # 计算 RMS 能量
         rms = np.sqrt(np.mean(audio_array ** 2))
         
-        # 自适应背景噪音估计（仅在非说话状态时更新）
-        if not self._is_speaking:
-            self._frame_count += 1
-            if self._frame_count <= 30:  # 前30帧用于初始化背景噪音
-                self._background_energy = (self._background_energy * (self._frame_count - 1) + rms) / self._frame_count
-            else:
-                # 使用指数移动平均更新背景噪音（慢速更新）
-                self._background_energy = 0.95 * self._background_energy + 0.05 * rms
+        # 使用动态阈值，避免底噪触发
+        # 32768 是 Int16 的最大值
+        # 0.5 (默认) * 10000 = 5000 (约为 -16dB IFS)
+        base_threshold = max(self.threshold * 10000, 500)
+        is_speech = rms > base_threshold
         
-        # 动态调整能量阈值（背景噪音 + 用户设置的灵敏度）
-        # threshold: 0.5 表示中等灵敏度，阈值 = 背景噪音 * (2 + threshold * 4)
-        # threshold: 0.0 -> 2倍背景噪音, 0.5 -> 4倍, 1.0 -> 6倍
-        self._energy_threshold = max(300, self._background_energy * (2 + self.threshold * 4))
-        
-        # 判断是否为语音
-        is_speech = rms > self._energy_threshold
-        
-        if is_speech:
-            # 检测到语音能量
-            self._speech_frames += 1
+        if is_speech and not self._is_speaking:
+            self._is_speaking = True
             self._silence_frames = 0
-            
-            if not self._is_speaking:
-                # 需要连续几帧都是语音才确认开始说话（避免误触发）
-                if self._speech_frames >= self._min_speech_frames:
-                    self._is_speaking = True
-                    self._accepting_audio = True
-                    if self._on_speech_start:
-                        await self._on_speech_start()
-                    logger.info(f"✅ 用户开始说话 (RMS: {rms:.2f}, 阈值: {self._energy_threshold:.2f}, 背景: {self._background_energy:.2f})")
-        else:
-            # 检测到静音
-            self._speech_frames = 0
-            
-            if self._is_speaking:
-                # 当前处于说话状态，累计静音帧数
-                self._silence_frames += 1
-                # 根据静音时长判断是否结束
-                frame_duration_ms = len(audio_array) / frame.sample_rate * 1000
-                accumulated_silence_ms = self._silence_frames * frame_duration_ms
-                
-                if accumulated_silence_ms > self.silence_duration_ms:
-                    # 静音时间超过阈值，判定为说话结束
-                    self._is_speaking = False
-                    self._accepting_audio = False  # 停止接收音频
-                    self._silence_frames = 0
-                    self._speech_frames = 0
-                    if self._on_speech_end:
-                        await self._on_speech_end()
-                    logger.info(f"🛑 用户停止说话 (静音时长: {accumulated_silence_ms:.0f}ms, RMS: {rms:.2f})")
-                    # 返回停止帧，通知下游停止处理
-                    return UserStoppedSpeakingFrame()
+            if self._on_speech_start:
+                await self._on_speech_start()
+            return UserStartedSpeakingFrame()
         
-        # 只在接收音频状态下返回音频帧，否则丢弃
-        if self._accepting_audio:
-            return frame
-        else:
-            # 不在说话状态，丢弃音频帧
-            return None
-    
-    def reset(self):
-        """重置VAD状态"""
-        self._is_speaking = False
-        self._accepting_audio = False
-        self._silence_frames = 0
-        self._speech_frames = 0
-        logger.debug("VAD 状态已重置")
+        elif not is_speech and self._is_speaking:
+            self._silence_frames += 1
+            # 根据静音时长判断是否结束
+            frame_duration_ms = len(audio_array) / frame.sample_rate * 1000
+            if self._silence_frames * frame_duration_ms > self.silence_duration_ms:
+                self._is_speaking = False
+                self._silence_frames = 0
+                if self._on_speech_end:
+                    await self._on_speech_end()
+                return UserStoppedSpeakingFrame()
+        
+        return frame
 
 
 class STTService(BaseService):
@@ -258,45 +208,32 @@ class STTService(BaseService):
     
     async def process(self, frame: Frame) -> Optional[Frame]:
         """处理音频帧，进行语音识别"""
-        # 忽略 None 帧
-        if frame is None:
-            return None
-            
         if isinstance(frame, UserStoppedSpeakingFrame):
             # 用户停止说话，处理累积的音频
-            if self._audio_buffer and len(self._audio_buffer) > 1600:  # 至少 0.1 秒音频
+            if self._audio_buffer:
                 transcription = ""
                 
                 if self._provider:
                     # 使用真实的 STT 服务
                     try:
-                        logger.info(f"开始转录 ({len(self._audio_buffer)} 字节音频)")
                         transcription = await self._provider.transcribe(self._audio_buffer)
-                        if transcription:
-                            logger.info(f"✅ 转录完成: {transcription}")
                     except Exception as e:
-                        logger.error(f"❌ STT 转录失败: {e}")
-                        transcription = ""
+                        logger.error(f"STT 转录失败: {e}")
+                        transcription = "[转录失败]"
                 else:
                     # 回退到模拟模式
-                    logger.warning("使用模拟转录模式")
                     transcription = "[模拟转录] 你好，请问有什么可以帮助你的？"
-                
-                # 清空缓冲区
-                self._audio_buffer = b''
                 
                 if transcription:
                     if self._on_transcription:
                         await self._on_transcription(transcription)
+                    
+                    self._audio_buffer = b''
                     return TranscriptionFrame(text=transcription)
-            else:
-                # 音频太短，丢弃
-                if self._audio_buffer:
-                    logger.debug(f"音频太短，丢弃 ({len(self._audio_buffer)} 字节)")
+                
                 self._audio_buffer = b''
         
         elif isinstance(frame, InputAudioFrame):
-            # 累积音频数据
             self._audio_buffer += frame.audio
         
         return frame
@@ -656,10 +593,6 @@ class PipelineManager:
         if self.vad:
             result = await self.vad.process(frame)
             
-            # VAD 返回 None 表示丢弃该帧（非说话状态）
-            if result is None:
-                return
-            
             # VAD 检测到语音结束，自动触发完整处理流程
             if isinstance(result, UserStoppedSpeakingFrame):
                 if self.stt:
@@ -672,14 +605,11 @@ class PipelineManager:
                         # LLM 完成后自动触发 TTS
                         if isinstance(llm_result, LLMResponseFrame) and self.tts:
                             await self.tts.process(llm_result)
-                
-                # 重置 VAD 状态，准备下一轮检测
-                self.vad.reset()
             
             # 继续收集音频用于 STT
-            elif isinstance(result, InputAudioFrame):
+            elif isinstance(result, (InputAudioFrame, UserStartedSpeakingFrame)):
                 if self.stt:
-                    await self.stt.process(result)
+                    await self.stt.process(frame)
         else:
             # 没有 VAD 时直接处理（不应该发生，因为 VAD 是内置的）
             logger.warning("VAD 未启用，这不应该发生在内置 VAD 模式下")

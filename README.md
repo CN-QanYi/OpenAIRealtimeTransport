@@ -271,29 +271,10 @@ EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
 
 ### VAD 配置（自由麦模式）
 ```bash
-# VAD 灵敏度阈值 (0.0-1.0)，越高越不敏感
-# 建议: 安静环境 0.3-0.5, 普通环境 0.5-0.7, 嘈杂环境 0.7-0.9
-VAD_THRESHOLD=0.5
-
-# 静音检测时长（毫秒），超过此时长的静音将触发语音结束
-# 建议: 快速响应 300-400, 正常 500, 避免误截断 600-700
-VAD_SILENCE_DURATION_MS=400
-
-# 语音前缀填充时长（毫秒），保留语音开始前的音频
-VAD_PREFIX_PADDING_MS=300
+VAD_THRESHOLD=0.5  # 灵敏度 (0.0-1.0)，越高越不敏感
+VAD_SILENCE_DURATION_MS=500  # 静音检测时长（毫秒）
+VAD_PREFIX_PADDING_MS=300  # 语音前缀填充（毫秒）
 ```
-
-**VAD 工作原理：**
-- 使用自适应能量检测算法，自动适应背景噪音
-- 需要连续 3 帧检测到语音才确认开始说话（防止误触发）
-- 检测到静音超过阈值时长后自动截断并处理
-- 非说话状态下的音频帧会被自动丢弃
-
-**调优建议：**
-- 如果**语音经常被截断**：增大 `VAD_SILENCE_DURATION_MS`（如 600-700）
-- 如果**无声音时仍在录入**：增大 `VAD_THRESHOLD`（如 0.7-0.9）
-- 如果**反应太慢**：减小 `VAD_SILENCE_DURATION_MS`（如 300-400）
-- 如果**容易误触发**：增大 `VAD_THRESHOLD`（如 0.6-0.8）
 
 完整配置选项请查看 [.env.example](.env.example)
 
@@ -359,26 +340,14 @@ TTS: ElevenLabs
 
 ### 内置 Server VAD（自由麦模式）
 
-服务器内置了基于能量的 VAD（语音活动检测），默认启用 `server_vad` 模式，自动检测用户的语音活动：
+服务器内置了 Pipecat 的 Silero VAD，默认启用 `server_vad` 模式，自动检测用户的语音活动：
 
 **工作流程：**
 1. 客户端连续发送音频数据（`input_audio_buffer.append`）
-2. VAD 进行实时能量检测：
-   - 自动估计背景噪音水平
-   - 动态调整检测阈值（背景噪音 × (2 + threshold × 4)）
-   - 需要连续 3 帧语音才确认开始说话（防止噪音误触发）
-3. VAD 检测到用户开始说话 → 发送 `input_audio_buffer.speech_started` 事件
-4. 累积音频数据，持续检测静音时长
-5. VAD 检测到静音超过阈值 → 发送 `input_audio_buffer.speech_stopped` 事件
-6. 服务器自动触发 STT → LLM → TTS 流程
-7. 客户端收到 AI 响应的音频和文本
-8. VAD 重置状态，非说话期间的音频帧被自动丢弃
-
-**防误触发机制：**
-- ✅ 连续语音帧检测（至少 3 帧）
-- ✅ 自适应背景噪音估计
-- ✅ 音频长度验证（至少 0.1 秒）
-- ✅ 非说话状态下自动丢弃音频
+2. VAD 自动检测到用户开始说话 → 发送 `input_audio_buffer.speech_started` 事件
+3. VAD 检测到用户停止说话 → 发送 `input_audio_buffer.speech_stopped` 事件
+4. 服务器自动触发 STT → LLM → TTS 流程
+5. 客户端收到 AI 响应的音频和文本
 
 **打断功能：**
 - 客户端收到 `speech_started` 事件后应立即停止播放 AI 音频
@@ -526,15 +495,8 @@ TTS_PROVIDER=edge_tts
 EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
 
 # ==================== VAD 配置 ====================
-# VAD 灵敏度阈值 (0.0-1.0)，越高越不敏感
-# 建议: 安静环境 0.3-0.5, 普通环境 0.5-0.7, 嘈杂环境 0.7-0.9
 VAD_THRESHOLD=0.5
-
-# 静音检测时长（毫秒），超过此时长的静音将触发语音结束
-# 建议: 快速响应 300-400, 正常 500, 避免误截断 600-700
-VAD_SILENCE_DURATION_MS=400
-
-# 语音前缀填充时长（毫秒），保留语音开始前的音频
+VAD_SILENCE_DURATION_MS=500
 VAD_PREFIX_PADDING_MS=300
 
 # ==================== 服务器配置 ====================
