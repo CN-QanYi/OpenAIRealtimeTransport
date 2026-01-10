@@ -3,7 +3,6 @@
 提供一个简化的接口来构建语音处理管道
 """
 import asyncio
-import logging
 from typing import Optional, Callable, Awaitable, List, Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -15,8 +14,9 @@ from service_providers import (
     BaseLLMProvider, 
     BaseTTSProvider
 )
+from logger_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ==================== 帧类型定义 ====================
