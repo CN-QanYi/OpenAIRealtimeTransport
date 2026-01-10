@@ -201,13 +201,11 @@ class VADService(BaseService):
                         return UserStoppedSpeakingFrame()
                     
                     return frame
-                except Exception as e:
-                    logger.exception(f"Silero VAD 处理错误，回退到能量检测: {e}")
-                    # 禁用 Silero 并重置状态
+                except Exception:
+                    logger.exception("Silero VAD 处理错误，回退到能量检测")
+                    # 禁用 Silero，但保留会话状态以便能量检测 VAD 继续
                     self._use_silero = False
                     self._silero_vad = None
-                    self._is_speaking = False
-                    self._silence_frames = 0
         
         # 回退：简单的能量检测 VAD
         # 计算 RMS 能量
