@@ -114,7 +114,7 @@ class BaseService(ABC):
 
 
 class VADService(BaseService):
-    """语音活动检测服务"""
+    """语音活动检测服务 - 使用 Pipecat 的 Silero VAD"""
     
     def __init__(self, threshold: float = 0.5, 
                  silence_duration_ms: int = 500,
@@ -126,6 +126,24 @@ class VADService(BaseService):
         self._silence_frames = 0
         self._on_speech_start: Optional[Callable[[], Awaitable[None]]] = None
         self._on_speech_end: Optional[Callable[[], Awaitable[None]]] = None
+        
+        # 尝试加载 Pipecat 的 Silero VAD
+        self._silero_vad = None
+        self._use_silero = False
+        try:
+            from pipecat.vad.silero import SileroVADAnalyzer
+            self._silero_vad = SileroVADAnalyzer(
+                confidence=self.threshold,
+                min_silence_duration_ms=self.silence_duration_ms,
+                padding_duration_ms=self.prefix_padding_ms,
+                sample_rate=16000
+            )
+            self._use_silero = True
+            logger.info("✅ 使用 Pipecat Silero VAD (高精度)")
+        except ImportError:
+            logger.warning("⚠️  Pipecat Silero VAD 不可用，使用简单的能量检测 VAD")
+        except Exception as e:
+            logger.warning(f"⚠️  Silero VAD 初始化失败: {e}，使用简单的能量检测 VAD")
     
     def on_speech_start(self, callback: Callable[[], Awaitable[None]]):
         """设置语音开始回调"""
@@ -142,13 +160,40 @@ class VADService(BaseService):
         if not isinstance(frame, InputAudioFrame):
             return frame
         
-        # 简单的能量检测 VAD（实际应使用 Silero VAD）
         import numpy as np
         audio_array = np.frombuffer(frame.audio, dtype=np.int16).astype(np.float32)
         
         if len(audio_array) == 0:
             return frame
         
+        # 使用 Silero VAD 或回退到简单的能量检测
+        if self._use_silero and self._silero_vad:
+            try:
+                # Silero VAD 需要归一化到 [-1, 1] 的 float32
+                normalized_audio = audio_array / 32768.0
+                
+                # Silero VAD 分析
+                vad_result = self._silero_vad.analyze_audio(normalized_audio)
+                
+                # vad_result 包含 'speech_started', 'speech_ended' 等事件
+                if vad_result.get('speech_started') and not self._is_speaking:
+                    self._is_speaking = True
+                    if self._on_speech_start:
+                        await self._on_speech_start()
+                    return UserStartedSpeakingFrame()
+                
+                elif vad_result.get('speech_ended') and self._is_speaking:
+                    self._is_speaking = False
+                    if self._on_speech_end:
+                        await self._on_speech_end()
+                    return UserStoppedSpeakingFrame()
+                
+                return frame
+            except Exception as e:
+                logger.error(f"Silero VAD 处理错误: {e}，回退到能量检测")
+                self._use_silero = False
+        
+        # 回退：简单的能量检测 VAD
         # 计算 RMS 能量
         rms = np.sqrt(np.mean(audio_array ** 2))
         
