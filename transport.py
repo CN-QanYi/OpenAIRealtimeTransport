@@ -152,7 +152,7 @@ class OpenAIRealtimeTransport:
             event_type = event.get("type", "")
             event_id = event.get("event_id")
             
-            logger.debug(f"收到客户端事件: {event_type}")
+            # logger.debug(f"收到客户端事件: {event_type}")  # 减少噪音
             
             # 根据事件类型分发处理
             handlers = {
@@ -362,7 +362,7 @@ class OpenAIRealtimeTransport:
         
         try:
             await self.ws.send_json(event)
-            logger.debug(f"发送事件: {event.get('type')}")
+            # logger.debug(f"发送事件: {event.get('type')}")  # 减少噪音
         except Exception as e:
             logger.error(f"发送事件失败: {e}")
     

@@ -9,7 +9,6 @@ OpenAI Realtime API 兼容服务器
     将 OpenAI SDK 的 baseUrl 修改为 ws://localhost:8000 即可
 """
 import os
-import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -19,13 +18,14 @@ from fastapi.responses import JSONResponse
 
 from config import config, print_config
 from realtime_session import session_manager, RealtimeSession
+from logger_config import setup_logging, get_logger
 
 # 配置日志
-logging.basicConfig(
-    level=logging.DEBUG if config.server.debug else logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+setup_logging(
+    level="DEBUG" if config.server.debug else "INFO",
+    use_color=True
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @asynccontextmanager

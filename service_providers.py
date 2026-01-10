@@ -57,7 +57,7 @@ class DeepgramSTTProvider(BaseSTTProvider):
             )
             
             transcript = response.results.channels[0].alternatives[0].transcript
-            logger.info(f"Deepgram 转录结果: {transcript}")
+            logger.info(f"📝 转录: {transcript}")
             return transcript
             
         except Exception as e:
@@ -107,7 +107,7 @@ class OpenAIWhisperSTTProvider(BaseSTTProvider):
             )
             
             transcript = response.text
-            logger.info(f"OpenAI Whisper 转录结果: {transcript}")
+            logger.info(f"📝 转录: {transcript}")
             return transcript
             
         except Exception as e:
@@ -163,7 +163,7 @@ class LocalWhisperSTTProvider(BaseSTTProvider):
             os.unlink(temp_path)
             
             transcript = result["text"].strip()
-            logger.info(f"本地 Whisper 转录结果: {transcript}")
+            logger.info(f"📝 转录: {transcript}")
             return transcript
             
         except Exception as e:
@@ -256,7 +256,7 @@ class OpenAILLMProvider(BaseLLMProvider):
             # 添加助手响应到历史
             self._conversation_history.append({"role": "assistant", "content": full_response})
             
-            logger.info(f"OpenAI 响应完成: {full_response[:100]}...")
+            logger.info(f"💬 LLM: {full_response[:80]}...")
             return full_response
             
         except Exception as e:
@@ -327,7 +327,7 @@ class OllamaLLMProvider(BaseLLMProvider):
             # 添加助手响应到历史
             self._conversation_history.append({"role": "assistant", "content": full_response})
             
-            logger.info(f"Ollama 响应完成: {full_response[:100]}...")
+            logger.info(f"💬 LLM: {full_response[:80]}...")
             return full_response
             
         except Exception as e:
@@ -399,7 +399,7 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
                         error = await response.text()
                         logger.error(f"ElevenLabs TTS 错误: {error}")
             
-            logger.info(f"ElevenLabs TTS 完成: {len(full_audio)} bytes")
+            logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
             return full_audio
             
         except Exception as e:
@@ -433,7 +433,7 @@ class EdgeTTSProvider(BaseTTSProvider):
                     full_audio += audio_data
                     await on_audio_chunk(audio_data)
             
-            logger.info(f"Edge TTS 完成: {len(full_audio)} bytes")
+            logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
             return full_audio
             
         except ImportError:
@@ -492,7 +492,7 @@ class OpenAITTSProvider(BaseTTSProvider):
                 chunk = full_audio[i:i+chunk_size]
                 await on_audio_chunk(chunk)
             
-            logger.info(f"OpenAI TTS 完成: {len(full_audio)} bytes")
+            logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
             return full_audio
             
         except Exception as e:

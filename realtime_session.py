@@ -3,7 +3,6 @@
 将 Transport 和 Pipeline 连接在一起
 """
 import asyncio
-import logging
 from typing import Optional
 from dataclasses import dataclass, field
 
@@ -13,8 +12,9 @@ from transport import OpenAIRealtimeTransport
 from pipeline_manager import PipelineManager
 from protocol import SessionConfig
 from config import config
+from logger_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -52,7 +52,7 @@ class RealtimeSession:
         
         self._setup_callbacks()
         
-        logger.info("会话已创建")
+        logger.debug("会话对象已创建")
     
     def _setup_callbacks(self):
         """设置各组件之间的回调连接"""
@@ -197,12 +197,12 @@ class RealtimeSession:
         else:
             await self.transport.send_speech_started()
         
-        logger.debug("用户开始说话")
+        logger.info("🎤 用户开始说话")
     
     async def _on_user_speech_end(self):
         """用户停止说话"""
         await self.transport.send_speech_stopped()
-        logger.debug("用户停止说话")
+        logger.info("🔇 用户停止说话")
     
     async def _on_transcription(self, text: str):
         """转录完成"""
@@ -213,7 +213,7 @@ class RealtimeSession:
         response_id, item_id = await self.transport.begin_response()
         self.state.current_response_id = response_id
         self.state.current_item_id = item_id
-        logger.debug(f"响应开始: {response_id}")
+        logger.info(f"🤖 开始生成响应: {response_id}")
     
     async def _on_response_text(self, text: str):
         """响应文本增量"""
@@ -238,7 +238,7 @@ class RealtimeSession:
         await self.transport.end_response(transcript=full_text)
         self.state.current_response_id = None
         self.state.current_item_id = None
-        logger.debug("响应结束")
+        logger.info("✅ 响应生成完成")
 
 
 class SessionManager:
