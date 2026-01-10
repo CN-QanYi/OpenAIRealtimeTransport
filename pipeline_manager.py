@@ -168,30 +168,46 @@ class VADService(BaseService):
         
         # 使用 Silero VAD 或回退到简单的能量检测
         if self._use_silero and self._silero_vad:
-            try:
-                # Silero VAD 需要归一化到 [-1, 1] 的 float32
-                normalized_audio = audio_array / 32768.0
-                
-                # Silero VAD 分析
-                vad_result = self._silero_vad.analyze_audio(normalized_audio)
-                
-                # vad_result 包含 'speech_started', 'speech_ended' 等事件
-                if vad_result.get('speech_started') and not self._is_speaking:
-                    self._is_speaking = True
-                    if self._on_speech_start:
-                        await self._on_speech_start()
-                    return UserStartedSpeakingFrame()
-                
-                elif vad_result.get('speech_ended') and self._is_speaking:
-                    self._is_speaking = False
-                    if self._on_speech_end:
-                        await self._on_speech_end()
-                    return UserStoppedSpeakingFrame()
-                
-                return frame
-            except Exception as e:
-                logger.error(f"Silero VAD 处理错误: {e}，回退到能量检测")
+            # 检查采样率：Silero VAD 只支持 8000 或 16000 Hz
+            if frame.sample_rate not in (8000, 16000):
+                logger.warning(
+                    f"Silero VAD 不支持采样率 {frame.sample_rate} Hz (仅支持 8000/16000 Hz)，"
+                    f"回退到能量检测 VAD"
+                )
+                # 禁用 Silero 并重置状态
                 self._use_silero = False
+                self._silero_vad = None
+                self._is_speaking = False
+                self._silence_frames = 0
+            else:
+                try:
+                    # Silero VAD 需要归一化到 [-1, 1] 的 float32
+                    normalized_audio = audio_array / 32768.0
+                    
+                    # Silero VAD 分析
+                    vad_result = self._silero_vad.analyze_audio(normalized_audio)
+                    
+                    # vad_result 包含 'speech_started', 'speech_ended' 等事件
+                    if vad_result.get('speech_started') and not self._is_speaking:
+                        self._is_speaking = True
+                        if self._on_speech_start:
+                            await self._on_speech_start()
+                        return UserStartedSpeakingFrame()
+                    
+                    elif vad_result.get('speech_ended') and self._is_speaking:
+                        self._is_speaking = False
+                        if self._on_speech_end:
+                            await self._on_speech_end()
+                        return UserStoppedSpeakingFrame()
+                    
+                    return frame
+                except Exception as e:
+                    logger.exception(f"Silero VAD 处理错误，回退到能量检测: {e}")
+                    # 禁用 Silero 并重置状态
+                    self._use_silero = False
+                    self._silero_vad = None
+                    self._is_speaking = False
+                    self._silence_frames = 0
         
         # 回退：简单的能量检测 VAD
         # 计算 RMS 能量
