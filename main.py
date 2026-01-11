@@ -11,6 +11,7 @@ OpenAI Realtime API 兼容服务器
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,29 +59,53 @@ app = FastAPI(
 _cors_origins_env = os.getenv("CORS_ORIGINS", "")
 _cors_allow_credentials = True
 
-if config.server.debug:
-    # 开发模式：使用通配符时必须禁用 credentials（浏览器 CORS 规范要求）
-    if _cors_origins_env:
-        # 如果配置了具体来源，使用具体来源并允许 credentials
-        _cors_allowed_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
-        logger.info(f"CORS (DEBUG): 允许的来源: {_cors_allowed_origins}")
-    else:
-        # 未配置具体来源，使用通配符但禁用 credentials
-        _cors_allowed_origins = ["*"]
-        _cors_allow_credentials = False
-        logger.warning(
-            "CORS: 警告 - DEBUG 模式下使用 allow_origins=['*']，"
-            "allow_credentials 已禁用（浏览器 CORS 规范要求）。"
-            "建议设置 CORS_ORIGINS 环境变量指定具体来源。"
+
+def _parse_and_validate_cors_origins(env_value: str, *, debug: bool) -> tuple[list[str], bool]:
+    """解析并校验 CORS_ORIGINS。
+
+    Returns:
+        (allowed_origins, allow_credentials)
+    """
+    raw = (env_value or "")
+    stripped = raw.strip()
+
+    # 空字符串或仅空白：明确记录采用默认行为
+    if not stripped:
+        if debug:
+            logger.warning(
+                "CORS: 未配置 CORS_ORIGINS（为空/仅空格），DEBUG 模式将使用 allow_origins=['*']；"
+                "allow_credentials 已禁用（浏览器 CORS 规范要求）。"
+            )
+            return ["*"], False
+
+        defaults = ["http://localhost:3000", "http://localhost:8000"]
+        logger.info(
+            "CORS: 未配置 CORS_ORIGINS（为空/仅空格），生产模式将使用默认来源: %s",
+            defaults,
         )
-else:
-    # 生产模式：仅允许配置的来源
-    if _cors_origins_env:
-        _cors_allowed_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
-    else:
-        # 默认允许本地访问
-        _cors_allowed_origins = ["http://localhost:3000", "http://localhost:8000"]
-    logger.info(f"CORS: 允许的来源: {_cors_allowed_origins}")
+        return defaults, True
+
+    # 非空：解析并校验 URL 格式
+    candidates = [origin.strip() for origin in stripped.split(",") if origin.strip()]
+    invalid: list[str] = []
+    for origin in candidates:
+        parsed = urlparse(origin)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            invalid.append(origin)
+
+    if invalid:
+        raise ValueError(
+            "CORS_ORIGINS 配置包含无效 URL（需要 http/https 且包含主机名），请修正: "
+            + ", ".join(invalid)
+        )
+
+    logger.info("CORS: 允许的来源: %s", candidates)
+    return candidates, True
+
+_cors_allowed_origins, _cors_allow_credentials = _parse_and_validate_cors_origins(
+    _cors_origins_env,
+    debug=config.server.debug,
+)
 
 app.add_middleware(
     CORSMiddleware,

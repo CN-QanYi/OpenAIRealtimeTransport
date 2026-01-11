@@ -551,7 +551,11 @@ class EdgeTTSProvider(BaseTTSProvider):
                     logger.warning(f"Edge TTS 失败 (voice={voice}): {e}")
                     continue
 
-            logger.error(f"Edge TTS 错误: {last_error}")
+            diagnostic = ""
+            if not proxy and last_error and "No audio was received" in str(last_error):
+                diagnostic = " 如果未配置代理，请检查 EDGE_TTS_PROXY 配置以排查 'No audio was received' 问题"
+
+            logger.error(f"Edge TTS 错误: {last_error}{diagnostic}")
             return b""
             
         except ImportError:
@@ -589,48 +593,49 @@ class OpenAITTSProvider(BaseTTSProvider):
         on_audio_chunk: Callable[[bytes], Awaitable[None]]
     ) -> bytes:
         """流式合成 OpenAI TTS 语音"""
-        try:
-            client = await self._get_client()
+        client = await self._get_client()
 
-            text = (text or "").strip()
-            if not text:
-                logger.info("OpenAI TTS: 文本为空，跳过合成")
-                return b""
-            
-            response = await client.audio.speech.create(
-                model=self.model,
-                voice=self.voice,
-                input=text,
-                response_format="pcm"  # 16-bit PCM
-            )
-            
-            full_audio = response.content
-            if not full_audio:
-                return b""
-
-            # PCM16 必须 2 字节对齐
-            if len(full_audio) % 2 != 0:
-                full_audio = full_audio[:-1]
-
-            # 统一到内部 16kHz，避免 Transport 重采样假设与实际采样率不一致
-            try:
-                from audio_utils import resample_audio, SAMPLE_RATE as _CLIENT_SR, INTERNAL_SAMPLE_RATE as _INTERNAL_SR
-                full_audio = resample_audio(full_audio, from_rate=_CLIENT_SR, to_rate=_INTERNAL_SR)
-            except Exception as _e:
-                logger.warning(f"OpenAI TTS: 重采样失败，将直接发送原始音频: {_e}")
-            
-            # 分块发送
-            chunk_size = 4096
-            for i in range(0, len(full_audio), chunk_size):
-                chunk = full_audio[i:i+chunk_size]
-                await on_audio_chunk(chunk)
-            
-            logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
-            return full_audio
-            
-        except Exception as e:
-            logger.error(f"OpenAI TTS 错误: {e}")
+        text = (text or "").strip()
+        if not text:
+            logger.info("OpenAI TTS: 文本为空，跳过合成")
             return b""
+        
+        response = await client.audio.speech.create(
+            model=self.model,
+            voice=self.voice,
+            input=text,
+            response_format="pcm"  # 16-bit PCM
+        )
+        
+        full_audio = response.content
+        if not full_audio:
+            return b""
+
+        # PCM16 必须 2 字节对齐
+        if len(full_audio) % 2 != 0:
+            full_audio = full_audio[:-1]
+
+        # 统一到内部 16kHz。
+        # 重要：如果重采样失败，不能把 24kHz 的音频当作 16kHz 往下游送，否则会造成
+        # frame.sample_rate 元数据不一致，影响时长计算、静音检测等逻辑。
+        from audio_utils import resample_audio, SAMPLE_RATE as _CLIENT_SR, INTERNAL_SAMPLE_RATE as _INTERNAL_SR
+        try:
+            full_audio = resample_audio(full_audio, from_rate=_CLIENT_SR, to_rate=_INTERNAL_SR)
+        except Exception as e:
+            logger.error(
+                "OpenAI TTS: 24kHz->16kHz 重采样失败，为避免 sample_rate 元数据不一致，本次合成将中断: %s",
+                e,
+            )
+            raise
+        
+        # 分块发送
+        chunk_size = 4096
+        for i in range(0, len(full_audio), chunk_size):
+            chunk = full_audio[i:i+chunk_size]
+            await on_audio_chunk(chunk)
+        
+        logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
+        return full_audio
 
 
 # ==================== 服务工厂 ====================
