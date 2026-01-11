@@ -18,13 +18,14 @@
 ```
 ├── main.py                 # FastAPI 主服务器
 ├── config.py               # 配置管理（支持 .env）
+├── logger_config.py        # 日志配置模块
 ├── service_providers.py    # STT/LLM/TTS 服务提供商
 ├── protocol.py             # OpenAI Realtime API 协议定义
 ├── transport.py            # WebSocket Transport 层（协议翻译官）
 ├── pipeline_manager.py     # Pipecat 管道管理器
 ├── realtime_session.py     # 会话生命周期管理
 ├── audio_utils.py          # 音频处理工具（重采样、音频播放等）
-├── push_to_talk_app.py     # Push-to-Talk 终端客户端（推荐）
+├── push_to_talk_app.py     # 终端客户端（自由麦模式）
 ├── test_client.py          # 简单测试客户端
 └── requirements.txt        # 依赖列表
 ```
