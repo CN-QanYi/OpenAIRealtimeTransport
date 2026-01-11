@@ -46,8 +46,8 @@ class DeepgramSTTProvider(BaseSTTProvider):
             try:
                 from deepgram import DeepgramClient, PrerecordedOptions
                 self._client = DeepgramClient(self.api_key)
-            except ImportError:
-                raise ImportError("请安装 deepgram-sdk: pip install deepgram-sdk")
+            except ImportError as err:
+                raise ImportError("请安装 deepgram-sdk: pip install deepgram-sdk") from err
         return self._client
     
     async def transcribe(self, audio_bytes: bytes, sample_rate: int = BaseSTTProvider.DEFAULT_SAMPLE_RATE) -> str:
@@ -90,8 +90,8 @@ class OpenAIWhisperSTTProvider(BaseSTTProvider):
             try:
                 from openai import AsyncOpenAI
                 self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
-            except ImportError:
-                raise ImportError("请安装 openai: pip install openai")
+            except ImportError as err:
+                raise ImportError("请安装 openai: pip install openai") from err
         return self._client
     
     async def transcribe(self, audio_bytes: bytes, sample_rate: int = BaseSTTProvider.DEFAULT_SAMPLE_RATE) -> str:
@@ -507,8 +507,8 @@ class OpenAITTSProvider(BaseTTSProvider):
             try:
                 from openai import AsyncOpenAI
                 self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
-            except ImportError:
-                raise ImportError("请安装 openai: pip install openai")
+            except ImportError as err:
+                raise ImportError("请安装 openai: pip install openai") from err
         return self._client
     
     async def synthesize_stream(

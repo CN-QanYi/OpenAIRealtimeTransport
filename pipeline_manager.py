@@ -32,7 +32,7 @@ class Frame:
 class AudioFrame(Frame):
     """音频帧"""
     audio: bytes
-    sample_rate: int = 16000
+    sample_rate: int = 24000  # 默认与 OpenAI Realtime API 一致
     num_channels: int = 1
 
 
@@ -186,9 +186,10 @@ class VADService(BaseService):
                     logger.warning(f"⚠️  Silero VAD 初始化失败: {e}，使用简单的能量检测 VAD")
                     self._silero_available = False
             else:
+                # Silero VAD 不支持 24000 Hz 等采样率，使用能量检测 VAD
                 logger.warning(
-                    f"Silero VAD 不支持采样率 {frame.sample_rate} Hz (仅支持 8000/16000 Hz)，"
-                    f"使用能量检测 VAD"
+                    f"Silero VAD 不支持采样率 {frame.sample_rate} Hz "
+                    f"(仅支持 8000/16000 Hz)，使用能量检测 VAD 处理该采样率的音频"
                 )
                 self._silero_available = False
         
@@ -217,9 +218,10 @@ class VADService(BaseService):
                         self._silence_frames = 0
                         # 注意：不重置 _is_speaking，保持当前状态
                 else:
+                    # 采样率不在支持范围内（如 24000 Hz）时回退到能量检测
                     logger.warning(
-                        f"Silero VAD 不支持采样率 {frame.sample_rate} Hz (仅支持 8000/16000 Hz)，"
-                        f"回退到能量检测 VAD"
+                        f"Silero VAD 不支持采样率 {frame.sample_rate} Hz "
+                        f"(仅支持 8000/16000 Hz)，回退到能量检测 VAD 处理该采样率的音频"
                     )
                     # 禁用 Silero 但保留当前说话状态以保持会话连续性
                     self._use_silero = False
@@ -599,6 +601,11 @@ class PipelineManager:
         
         self._running = False
         self._audio_queue: asyncio.Queue = asyncio.Queue()
+        
+        # 后台处理任务
+        self._consumer_task: Optional[asyncio.Task] = None
+        self._current_response_task: Optional[asyncio.Task] = None
+        self._cancelled = False
     
     def configure(self, 
                   vad_threshold: float = 0.5,
@@ -703,36 +710,99 @@ class PipelineManager:
     async def start(self):
         """启动管道"""
         self._running = True
+        self._cancelled = False
+        # 启动后台消费者任务
+        self._consumer_task = asyncio.create_task(self._process_audio_queue())
         logger.info("管道已启动")
     
     async def stop(self):
         """停止管道"""
         self._running = False
+        self._cancelled = True
+        
+        # 取消当前响应任务
+        if self._current_response_task and not self._current_response_task.done():
+            self._current_response_task.cancel()
+            try:
+                await self._current_response_task
+            except asyncio.CancelledError:
+                pass
+        
+        # 取消后台消费者任务
+        if self._consumer_task and not self._consumer_task.done():
+            self._consumer_task.cancel()
+            try:
+                await self._consumer_task
+            except asyncio.CancelledError:
+                pass
+        
         logger.info("管道已停止")
     
-    async def push_audio(self, audio_bytes: bytes):
-        """推送音频数据到管道（通过内置 VAD 自动检测）"""
+    async def _process_audio_queue(self):
+        """后台处理音频队列的消费者任务"""
+        while self._running:
+            try:
+                # 从队列获取帧，超时 0.1 秒以便检查 _running 状态
+                try:
+                    frame = await asyncio.wait_for(self._audio_queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
+                
+                if isinstance(frame, UserStoppedSpeakingFrame):
+                    # 用户停止说话，启动 STT->LLM->TTS 处理流程
+                    self._current_response_task = asyncio.create_task(
+                        self._process_response_pipeline(frame)
+                    )
+                    try:
+                        await self._current_response_task
+                    except asyncio.CancelledError:
+                        logger.info("响应处理已取消")
+                    finally:
+                        self._current_response_task = None
+                        
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.exception(f"音频队列处理错误: {e}")
+    
+    async def _process_response_pipeline(self, frame: UserStoppedSpeakingFrame):
+        """处理 STT->LLM->TTS 管道"""
+        if self.stt:
+            stt_result = await self.stt.process(frame)
+            
+            if self._cancelled:
+                return
+                
+            # STT 完成后触发 LLM
+            if isinstance(stt_result, TranscriptionFrame) and self.llm:
+                llm_result = await self.llm.process(stt_result)
+                
+                if self._cancelled:
+                    return
+                    
+                # LLM 完成后触发 TTS
+                if isinstance(llm_result, LLMResponseFrame) and self.tts:
+                    await self.tts.process(llm_result)
+    
+    async def push_audio(self, audio_bytes: bytes, sample_rate: int = 24000):
+        """推送音频数据到管道（通过内置 VAD 自动检测）
+        
+        Args:
+            audio_bytes: PCM16 音频数据
+            sample_rate: 音频采样率 (Hz)，默认 24000
+        """
         if not self._running:
             return
         
-        frame = InputAudioFrame(audio=audio_bytes)
+        frame = InputAudioFrame(audio=audio_bytes, sample_rate=sample_rate)
         
         # VAD 自动处理语音活动检测
         if self.vad:
             result = await self.vad.process(frame)
             
-            # VAD 检测到语音结束，自动触发完整处理流程
+            # VAD 检测到语音结束，将事件加入队列由后台任务处理
             if isinstance(result, UserStoppedSpeakingFrame):
-                if self.stt:
-                    stt_result = await self.stt.process(result)
-                    
-                    # STT 完成后自动触发 LLM
-                    if isinstance(stt_result, TranscriptionFrame) and self.llm:
-                        llm_result = await self.llm.process(stt_result)
-                        
-                        # LLM 完成后自动触发 TTS
-                        if isinstance(llm_result, LLMResponseFrame) and self.tts:
-                            await self.tts.process(llm_result)
+                await self._audio_queue.put(result)
             
             # 继续收集音频用于 STT
             elif isinstance(result, (InputAudioFrame, UserStartedSpeakingFrame)):
@@ -762,11 +832,24 @@ class PipelineManager:
     
     async def cancel_response(self):
         """取消当前响应"""
+        self._cancelled = True
+        
+        # 取消当前正在进行的响应任务
+        if self._current_response_task and not self._current_response_task.done():
+            self._current_response_task.cancel()
+            try:
+                await self._current_response_task
+            except asyncio.CancelledError:
+                pass
+        
         # 清空待处理队列
         while not self._audio_queue.empty():
             try:
                 self._audio_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
+        
+        # 重置取消标志，允许新的响应
+        self._cancelled = False
         
         logger.info("响应已取消")

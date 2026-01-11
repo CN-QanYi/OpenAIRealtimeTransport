@@ -55,12 +55,24 @@ app = FastAPI(
 # 添加 CORS 中间件
 # 从环境变量加载允许的来源，多个来源用逗号分隔
 # 例如: CORS_ORIGINS="http://localhost:3000,http://localhost:8080"
-# DEBUG 模式下允许所有来源（仅用于开发）
 _cors_origins_env = os.getenv("CORS_ORIGINS", "")
+_cors_allow_credentials = True
+
 if config.server.debug:
-    # 开发模式：允许所有来源（不推荐用于生产环境）
-    _cors_allowed_origins = ["*"]
-    logger.warning("CORS: 警告 - DEBUG 模式下允许所有来源 (allow_origins=['*'])，不应用于生产环境")
+    # 开发模式：使用通配符时必须禁用 credentials（浏览器 CORS 规范要求）
+    if _cors_origins_env:
+        # 如果配置了具体来源，使用具体来源并允许 credentials
+        _cors_allowed_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
+        logger.info(f"CORS (DEBUG): 允许的来源: {_cors_allowed_origins}")
+    else:
+        # 未配置具体来源，使用通配符但禁用 credentials
+        _cors_allowed_origins = ["*"]
+        _cors_allow_credentials = False
+        logger.warning(
+            "CORS: 警告 - DEBUG 模式下使用 allow_origins=['*']，"
+            "allow_credentials 已禁用（浏览器 CORS 规范要求）。"
+            "建议设置 CORS_ORIGINS 环境变量指定具体来源。"
+        )
 else:
     # 生产模式：仅允许配置的来源
     if _cors_origins_env:
@@ -73,7 +85,7 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_allowed_origins,
-    allow_credentials=True,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -112,7 +124,7 @@ async def list_sessions():
         "object": "list",
         "data": [
             {"id": sid, "status": "active"} 
-            for sid in session_manager._sessions.keys()
+            for sid in session_manager.list_session_ids()
         ],
         "count": session_manager.active_count
     }
@@ -153,15 +165,15 @@ async def websocket_realtime(
     except WebSocketDisconnect:
         logger.info("客户端断开连接")
     except Exception as e:
-        logger.error(f"WebSocket 错误: {e}")
+        logger.exception(f"WebSocket 错误: {e}")
         try:
-            await websocket.close(code=1011, reason=str(e))
+            await websocket.close(code=1011, reason="Internal server error")
         except (SystemExit, KeyboardInterrupt):
             raise
         except Exception as close_err:
-            logger.warning(f"关闭 WebSocket 时出错 (原始错误: {e}): {close_err}")
+            logger.warning(f"关闭 WebSocket 时出错: {close_err}")
     finally:
-        # 清理会话
+        # 清理会话（不调用 session.stop，由 session.run() 的 finally 块负责）
         if session:
             await session_manager.remove_session(session.state.session_id)
 
@@ -184,8 +196,9 @@ async def websocket_realtime_with_model(
     except WebSocketDisconnect:
         logger.info("客户端断开连接")
     except Exception as e:
-        logger.error(f"WebSocket 错误: {e}")
+        logger.exception(f"WebSocket 错误: {e}")
     finally:
+        # 清理会话（不调用 session.stop，由 session.run() 的 finally 块负责）
         if session:
             await session_manager.remove_session(session.state.session_id)
 
@@ -241,17 +254,26 @@ async def list_models():
 
 # ==================== 错误处理 ====================
 
+from protocol import generate_id
+
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
+async def global_exception_handler(_request, exc):
     """全局异常处理"""
-    logger.error(f"未处理的异常: {exc}")
+    # 生成唯一的请求 ID 用于关联日志
+    request_id = generate_id("err")
+    
+    # 记录完整的异常和堆栈跟踪
+    logger.exception(f"未处理的异常 [request_id={request_id}]: {exc}")
+    
+    # 返回通用错误响应，不泄露内部细节
     return JSONResponse(
         status_code=500,
         content={
             "error": {
-                "message": str(exc),
+                "message": "Internal server error",
                 "type": "internal_error",
-                "code": "server_error"
+                "code": "server_error",
+                "request_id": request_id
             }
         }
     )

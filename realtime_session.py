@@ -258,14 +258,21 @@ class SessionManager:
         return session
     
     async def remove_session(self, session_id: str):
-        """移除会话"""
+        """移除会话（幂等操作，不调用 session.stop）
+        
+        注意：此方法不调用 session.stop()，因为 session.run() 的 finally 块
+        已经负责调用 stop()。此方法仅负责从管理器中移除会话引用。
+        """
         if session_id in self._sessions:
-            session = self._sessions.pop(session_id)
-            await session.stop()
+            self._sessions.pop(session_id)
     
     def get_session(self, session_id: str) -> Optional[RealtimeSession]:
         """获取会话"""
         return self._sessions.get(session_id)
+    
+    def list_session_ids(self) -> list[str]:
+        """获取所有会话 ID 列表"""
+        return list(self._sessions.keys())
     
     @property
     def active_count(self) -> int:

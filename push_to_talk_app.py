@@ -196,6 +196,8 @@ class RealtimeApp(App[None]):
 
     async def _handle_local_server_connection(self) -> None:
         """连接到本地服务器"""
+        acc_items: dict[str, Any] = {}
+        
         try:
             self.ws = await websockets.connect(LOCAL_SERVER_URL)
             self.connection = self.ws
@@ -209,8 +211,6 @@ class RealtimeApp(App[None]):
                     "modalities": ["audio", "text"],
                 }
             }))
-            
-            acc_items: dict[str, Any] = {}
             
             # 接收事件循环
             async for message in self.ws:
@@ -264,9 +264,28 @@ class RealtimeApp(App[None]):
                 except json.JSONDecodeError:
                     continue
                     
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(f"WebSocket 连接已关闭: {e}")
+        except asyncio.CancelledError:
+            logger.info("连接任务已取消")
+            raise
         except Exception as e:
-            bottom_pane = self.query_one("#bottom-pane", RichLog)
-            bottom_pane.write(f"[red]连接错误: {e}[/red]")
+            logger.exception(f"本地服务器连接错误: {e}")
+            try:
+                bottom_pane = self.query_one("#bottom-pane", RichLog)
+                bottom_pane.write(f"[red]连接错误: {e}[/red]")
+            except Exception:
+                pass
+        finally:
+            # 确保清理连接状态
+            if self.ws is not None:
+                try:
+                    await self.ws.close()
+                except Exception as close_err:
+                    logger.warning(f"关闭 WebSocket 时出错: {close_err}")
+            self.ws = None
+            self.connection = None
+            self.connected.clear()
 
     async def _handle_openai_connection(self) -> None:
         """连接到 OpenAI Realtime API"""
@@ -330,6 +349,7 @@ class RealtimeApp(App[None]):
 
     async def send_mic_audio(self) -> None:
         import sounddevice as sd  # type: ignore
+        import numpy as np
 
         sent_audio = False
 
@@ -354,6 +374,19 @@ class RealtimeApp(App[None]):
                     continue
 
                 data, _ = stream.read(read_size)
+                
+                # 确保音频数据是 PCM16 格式的字节
+                # data 是 numpy 数组，需要转换为字节
+                if isinstance(data, np.ndarray):
+                    # 确保是 int16 类型
+                    if data.dtype != np.int16:
+                        data = data.astype(np.int16)
+                    # 如果是多通道，取第一通道
+                    if len(data.shape) > 1 and data.shape[1] > 1:
+                        data = data[:, 0]
+                    audio_bytes = data.tobytes()
+                else:
+                    audio_bytes = bytes(data)
 
                 connection = await self._get_connection()
                 
@@ -371,7 +404,7 @@ class RealtimeApp(App[None]):
                         sent_audio = True
                     
                     # 发送音频数据（自由麦模式下持续发送，Server VAD会自动检测）
-                    audio_b64 = base64.b64encode(cast(Any, data)).decode("utf-8")
+                    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                     await connection.send(json.dumps({
                         "type": "input_audio_buffer.append",
                         "audio": audio_b64
@@ -387,7 +420,7 @@ class RealtimeApp(App[None]):
                             logger.warning(f"发送 response.cancel 失败: {send_err}")
                         sent_audio = True
 
-                    await connection.input_audio_buffer.append(audio=base64.b64encode(cast(Any, data)).decode("utf-8"))
+                    await connection.input_audio_buffer.append(audio=base64.b64encode(audio_bytes).decode("utf-8"))
 
                 await asyncio.sleep(0)
         except KeyboardInterrupt:
