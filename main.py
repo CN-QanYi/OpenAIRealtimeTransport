@@ -156,8 +156,8 @@ async def websocket_realtime(
     session: Optional[RealtimeSession] = None
     
     try:
-        # 创建会话
-        session = await session_manager.create_session(websocket)
+        # 创建会话，传递模型参数
+        session = await session_manager.create_session(websocket, model=model)
         
         # 运行会话主循环
         await session.run()
@@ -191,7 +191,8 @@ async def websocket_realtime_with_model(
     session: Optional[RealtimeSession] = None
     
     try:
-        session = await session_manager.create_session(websocket)
+        # 使用路径中的模型名称
+        session = await session_manager.create_session(websocket, model=model_path)
         await session.run()
     except WebSocketDisconnect:
         logger.info("客户端断开连接")

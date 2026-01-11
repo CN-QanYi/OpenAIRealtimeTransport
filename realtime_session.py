@@ -38,14 +38,16 @@ class RealtimeSession:
     3. Transport 将响应转换为 OpenAI 格式发送给客户端
     """
     
-    def __init__(self, websocket: WebSocket):
+    def __init__(self, websocket: WebSocket, model: Optional[str] = None):
         """
         初始化会话
         
         Args:
             websocket: FastAPI WebSocket 连接
+            model: 模型名称（可选，用于配置 LLM）
         """
         self.websocket = websocket
+        self.model = model
         self.transport = OpenAIRealtimeTransport(websocket)
         self.pipeline = PipelineManager()
         self.state = SessionState()
@@ -250,9 +252,14 @@ class SessionManager:
     def __init__(self):
         self._sessions: dict[str, RealtimeSession] = {}
     
-    async def create_session(self, websocket: WebSocket) -> RealtimeSession:
-        """创建新会话"""
-        session = RealtimeSession(websocket)
+    async def create_session(self, websocket: WebSocket, model: Optional[str] = None) -> RealtimeSession:
+        """创建新会话
+        
+        Args:
+            websocket: WebSocket 连接
+            model: 模型名称（可选，用于配置 LLM）
+        """
+        session = RealtimeSession(websocket, model=model)
         await session.start()
         self._sessions[session.state.session_id] = session
         return session

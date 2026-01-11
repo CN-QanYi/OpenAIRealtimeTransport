@@ -61,10 +61,12 @@ class DeepgramSTTProvider(BaseSTTProvider):
                 model=self.model,
                 language=self.language,
                 smart_format=True,
+                sample_rate=sample_rate,  # 传递采样率到 Deepgram
             )
             
+            # 使用 audio/raw 并在 mimetype 中指定采样率和编码
             response = await client.listen.asyncrest.v("1").transcribe_file(
-                {"buffer": audio_bytes, "mimetype": "audio/raw"},
+                {"buffer": audio_bytes, "mimetype": f"audio/raw;encoding=linear16;sample_rate={sample_rate}"},
                 options
             )
             

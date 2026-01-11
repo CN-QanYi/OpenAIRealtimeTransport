@@ -293,15 +293,12 @@ class RealtimeApp(App[None]):
             self.connection = conn
             self.connected.set()
 
-            # note: this is the default and can be omitted
-            # if you want to manually handle VAD yourself, then set `'turn_detection': None`
+            # 更新会话配置：turn_detection 应该在顶层
+            # 注意：model 不能在 session.update 中修改，它在 connect() 时已指定
             await conn.session.update(
                 session={
-                    "audio": {
-                        "input": {"turn_detection": {"type": "server_vad"}},
-                    },
-                    "model": "gpt-realtime",
-                    "type": "realtime",
+                    "turn_detection": {"type": "server_vad"},
+                    "modalities": ["audio", "text"],
                 }
             )
 
