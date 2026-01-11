@@ -10,6 +10,8 @@ import asyncio
 import threading
 import queue
 import logging
+import os
+import sys
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,42 @@ def resample_to_24k(audio_bytes: bytes, from_rate: int = INTERNAL_SAMPLE_RATE) -
     return resample_audio(audio_bytes, from_rate, SAMPLE_RATE)
 
 
+# ==================== 音频转换器 ====================
+
+class AudioConverter:
+    """音频格式转换器
+
+    负责在客户端格式 (24kHz) 和内部处理格式 (16kHz) 之间转换。
+    """
+
+    def __init__(self):
+        """初始化音频转换器"""
+        self.client_sample_rate = SAMPLE_RATE  # 24kHz
+        self.internal_sample_rate = INTERNAL_SAMPLE_RATE  # 16kHz
+
+    def client_to_internal(self, audio_bytes: bytes) -> bytes:
+        """将客户端音频 (24kHz) 转换为内部处理格式 (16kHz)
+
+        Args:
+            audio_bytes: 客户端 PCM 音频数据 (24kHz)
+
+        Returns:
+            内部处理 PCM 音频数据 (16kHz)
+        """
+        return resample_to_16k(audio_bytes, from_rate=self.client_sample_rate)
+
+    def internal_to_client(self, audio_bytes: bytes) -> bytes:
+        """将内部处理音频 (16kHz) 转换为客户端格式 (24kHz)
+
+        Args:
+            audio_bytes: 内部处理 PCM 音频数据 (16kHz)
+
+        Returns:
+            客户端 PCM 音频数据 (24kHz)
+        """
+        return resample_to_24k(audio_bytes, from_rate=self.internal_sample_rate)
+
+
 # ==================== 异步音频播放器 ====================
 
 class AudioPlayerAsync:
@@ -129,6 +167,7 @@ class AudioPlayerAsync:
             import sounddevice as sd
         except ImportError:
             logger.error("sounddevice 未安装，无法播放音频")
+            print("[AudioPlayer] sounddevice 未安装，无法播放音频", file=sys.stderr)
             return
         
         stream: Optional[sd.OutputStream] = None
@@ -140,6 +179,8 @@ class AudioPlayerAsync:
                 dtype='int16',
             )
             stream.start()
+            if os.getenv("DEBUG_AUDIO_PLAYBACK", "false").lower() == "true":
+                print(f"[AudioPlayer] 输出流已启动: samplerate={self.sample_rate} channels={self.channels}")
             
             while not self._stop_event.is_set():
                 try:
@@ -151,16 +192,27 @@ class AudioPlayerAsync:
                     
                     # 写入音频流
                     import numpy as np
-                    audio_array = np.frombuffer(data, dtype=np.int16)
+                    # sounddevice 对 (frames, channels) 更稳定；并确保字节对齐
+                    frame_bytes = 2 * self.channels
+                    if frame_bytes <= 0:
+                        continue
+                    if len(data) % frame_bytes != 0:
+                        data = data[: len(data) - (len(data) % frame_bytes)]
+                        if not data:
+                            continue
+
+                    audio_array = np.frombuffer(data, dtype=np.int16).reshape(-1, self.channels)
                     stream.write(audio_array)
                     
                 except queue.Empty:
                     continue
                 except Exception as e:
                     logger.error(f"播放音频时出错: {e}")
+                    print(f"[AudioPlayer] 播放音频时出错: {e}", file=sys.stderr)
                     
         except Exception as e:
             logger.error(f"初始化音频流时出错: {e}")
+            print(f"[AudioPlayer] 初始化音频流时出错: {e}", file=sys.stderr)
         finally:
             if stream is not None:
                 try:
@@ -277,3 +329,19 @@ class AudioBuffer:
         """返回缓冲区中的字节数"""
         with self._lock:
             return len(self._buffer)
+
+
+# ==================== 音频时长计算 ====================
+
+def calculate_audio_duration_ms(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> float:
+    """计算音频数据的时长 (毫秒)
+
+    Args:
+        audio_bytes: PCM 音频数据
+        sample_rate: 采样率 (默认 24kHz)
+
+    Returns:
+        音频时长 (毫秒)
+    """
+    num_samples = len(audio_bytes) // (SAMPLE_WIDTH * CHANNELS)
+    return (num_samples / sample_rate) * 1000

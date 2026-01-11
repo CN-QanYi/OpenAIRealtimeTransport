@@ -47,10 +47,13 @@ import base64
 import asyncio
 import json
 import logging
+import os
 from typing import Any, cast, Optional, TYPE_CHECKING
 from typing_extensions import override
 
 logger = logging.getLogger(__name__)
+
+DEBUG_AUDIO_PLAYBACK = os.getenv("DEBUG_AUDIO_PLAYBACK", "false").lower() == "true"
 
 from textual import events
 from audio_utils import CHANNELS, SAMPLE_RATE, AudioPlayerAsync
@@ -237,6 +240,14 @@ class RealtimeApp(App[None]):
                         
                         if delta:
                             bytes_data = base64.b64decode(delta)
+                            if DEBUG_AUDIO_PLAYBACK and bytes_data:
+                                try:
+                                    import numpy as np
+                                    samples = np.frombuffer(bytes_data, dtype=np.int16)
+                                    peak = int(np.max(np.abs(samples))) if samples.size else 0
+                                    print(f"[AudioDelta] bytes={len(bytes_data)} peak={peak} frames_in_queue={self.audio_player.frame_count}")
+                                except Exception as dbg_err:
+                                    print(f"[AudioDelta] debug 失败: {dbg_err}")
                             self.audio_player.add_data(bytes_data)
                         continue
                     

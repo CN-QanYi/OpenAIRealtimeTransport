@@ -471,6 +471,7 @@ ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 
 # 或使用 OpenAI TTS
 TTS_PROVIDER=openai_tts
+OPENAI_API_KEY=your_key_here  # 复用 OpenAI API Key
 OPENAI_TTS_VOICE=alloy
 OPENAI_TTS_MODEL=tts-1
 ```

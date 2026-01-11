@@ -12,8 +12,11 @@ asyncio-mqtt>=0.16.0
 numpy>=1.24.0
 scipy>=1.11.0  # 可选，用于高质量重采样
 
-# Pipecat - 提供 VAD (语音活动检测) 和其他音频处理功能
+# Pipecat - 音频处理框架
 pipecat-ai>=0.0.40
+
+# PyTorch - Silero VAD 模型运行时（通过 torch.hub 自动下载 VAD 模型）
+torch>=2.0.0
 
 # 环境变量加载
 python-dotenv>=1.0.0

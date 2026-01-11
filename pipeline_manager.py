@@ -6,6 +6,7 @@ import asyncio
 from typing import Optional, Callable, Awaitable, List, Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from config import config, print_config
 from service_providers import (
@@ -114,7 +115,11 @@ class BaseService(ABC):
 
 
 class VADService(BaseService):
-    """语音活动检测服务 - 使用 Pipecat 的 Silero VAD"""
+    """语音活动检测服务
+
+    优先使用 Silero VAD (ONNX) 做高质量语音活动检测；当模型不可用或推理失败时，
+    自动回退到简单的能量检测。
+    """
     
     def __init__(self, threshold: float = 0.5, 
                  silence_duration_ms: int = 500,
@@ -127,22 +132,30 @@ class VADService(BaseService):
         self._on_speech_start: Optional[Callable[[], Awaitable[None]]] = None
         self._on_speech_end: Optional[Callable[[], Awaitable[None]]] = None
         
-        # 尝试加载 Pipecat 的 Silero VAD
-        self._silero_vad = None
-        self._use_silero = False
-        self._silero_available = False  # 标记 Silero 库是否可用
-        self._silero_sample_rate = None  # 当前 Silero VAD 配置的采样率
-        self._prev_vad_state = None  # 保存上一次的 VAD 状态用于检测转换
-        self._VADState = None  # 存储 VADState 枚举，避免重复导入
-        self._SileroVADAnalyzer = None  # 存储 SileroVADAnalyzer 类，避免重复导入
+        # 尝试加载 Silero VAD (ONNX)
+        self._silero_available = False
+        self._silero_model = None
+        self._silero_sr = 16000
+        self._silero_chunk_size = 512  # 16kHz 固定窗口
+        self._silero_float_buffer = []  # float32[-1,1] 缓冲
+        self._silero_silence_ms = 0.0
+        self._silero_consec_speech = 0
+        self._silero_min_speech_chunks = 2  # 连续命中次数，降低误触发
         try:
-            from pipecat.vad.silero import SileroVADAnalyzer, VADState
-            self._VADState = VADState  # 存储枚举类
-            self._SileroVADAnalyzer = SileroVADAnalyzer  # 存储类引用
+            import torch
+            # 使用 torch.hub 从官方仓库加载模型（使用 ONNX 版本以避免 Windows 路径问题）
+            torch.hub.set_dir(str(Path.home() / '.cache' / 'torch' / 'hub'))
+            self._silero_model, utils = torch.hub.load(
+                repo_or_dir='snakers4/silero-vad',
+                model='silero_vad',
+                force_reload=False,
+                onnx=True,  # 使用 ONNX 版本，避免 Windows 下的 JIT 加载问题
+                trust_repo=True
+            )
             self._silero_available = True
-            logger.info("✅ Pipecat Silero VAD 可用，将在收到第一帧时根据采样率初始化")
-        except ImportError:
-            logger.warning("⚠️  Pipecat Silero VAD 不可用，使用简单的能量检测 VAD")
+            logger.info("✅ Silero VAD (ONNX) 可用：内部以 16kHz 运行，输入将自动重采样")
+        except ImportError as e:
+            logger.warning(f"⚠️  Silero VAD 不可用 ({e})，使用简单的能量检测 VAD")
         except Exception as e:
             logger.warning(f"⚠️  Silero VAD 导入失败: {e}，使用简单的能量检测 VAD")
     
@@ -166,113 +179,66 @@ class VADService(BaseService):
         
         if len(audio_array) == 0:
             return frame
-        
-        # 尝试初始化或重新配置 Silero VAD（根据采样率）
-        if self._silero_available and not self._use_silero:
-            # Silero VAD 可用但尚未初始化，根据当前帧的采样率初始化
-            if frame.sample_rate in (8000, 16000):
-                try:
-                    self._silero_vad = self._SileroVADAnalyzer(
-                        confidence=self.threshold,
-                        min_silence_duration_ms=self.silence_duration_ms,
-                        padding_duration_ms=self.prefix_padding_ms,
-                        sample_rate=frame.sample_rate
-                    )
-                    self._use_silero = True
-                    self._silero_sample_rate = frame.sample_rate
-                    self._prev_vad_state = self._VADState.QUIET
-                    logger.info(f"✅ Silero VAD 已初始化，采样率: {frame.sample_rate} Hz")
-                except Exception as e:
-                    logger.warning(f"⚠️  Silero VAD 初始化失败: {e}，使用简单的能量检测 VAD")
-                    self._silero_available = False
-            else:
-                # Silero VAD 不支持 24000 Hz 等采样率，使用能量检测 VAD
-                logger.warning(
-                    f"Silero VAD 不支持采样率 {frame.sample_rate} Hz "
-                    f"(仅支持 8000/16000 Hz)，使用能量检测 VAD 处理该采样率的音频"
-                )
-                self._silero_available = False
-        
-        # 使用 Silero VAD 或回退到简单的能量检测
-        if self._use_silero and self._silero_vad:
-            # 检查采样率是否与初始化时一致
-            if frame.sample_rate != self._silero_sample_rate:
-                if frame.sample_rate in (8000, 16000):
-                    # 采样率改变但仍在支持范围内，重新初始化 Silero VAD
-                    try:
-                        self._silero_vad = self._SileroVADAnalyzer(
-                            confidence=self.threshold,
-                            min_silence_duration_ms=self.silence_duration_ms,
-                            padding_duration_ms=self.prefix_padding_ms,
-                            sample_rate=frame.sample_rate
-                        )
-                        self._silero_sample_rate = frame.sample_rate
-                        self._prev_vad_state = self._VADState.QUIET
-                        # 保留 _is_speaking 和 _silence_frames 以保持会话连续性
-                        logger.info(f"✅ Silero VAD 已重新初始化，新采样率: {frame.sample_rate} Hz")
-                    except Exception as e:
-                        logger.warning(f"⚠️  Silero VAD 重新初始化失败: {e}，回退到能量检测 VAD")
-                        # 禁用 Silero 但保留当前说话状态以保持会话连续性
-                        self._use_silero = False
-                        self._silero_vad = None
-                        self._silence_frames = 0
-                        # 注意：不重置 _is_speaking，保持当前状态
+
+        # 使用 Silero VAD（内部固定 16kHz，窗口 512 samples）；失败则回退
+        if self._silero_available and self._silero_model is not None:
+            try:
+                import torch
+                from audio_utils import resample_audio
+
+                # 如输入不是 16kHz，先重采样到 16kHz（避免“仅支持 512/256 样本窗口”的限制）
+                if frame.sample_rate != self._silero_sr:
+                    vad_bytes = resample_audio(frame.audio, from_rate=frame.sample_rate, to_rate=self._silero_sr)
                 else:
-                    # 采样率不在支持范围内（如 24000 Hz）时回退到能量检测
-                    logger.warning(
-                        f"Silero VAD 不支持采样率 {frame.sample_rate} Hz "
-                        f"(仅支持 8000/16000 Hz)，回退到能量检测 VAD 处理该采样率的音频"
-                    )
-                    # 禁用 Silero 但保留当前说话状态以保持会话连续性
-                    self._use_silero = False
-                    self._silero_vad = None
-                    self._silence_frames = 0
-                    # 注意：不重置 _is_speaking，保持当前状态
-            else:
-                try:
-                    # 将 float32 音频转换为 PCM16 (int16) 字节格式
-                    audio_int16 = np.clip(audio_array, -32768, 32767).astype(np.int16)
-                    audio_bytes = audio_int16.tobytes()
-                    
-                    # Silero VAD 分析（异步调用），返回 VADState 枚举
-                    vad_state = await self._silero_vad.analyze_audio(audio_bytes)
-                    
-                    # 检测状态转换
-                    # QUIET → SPEAKING: 用户开始说话
-                    if self._prev_vad_state == self._VADState.QUIET and vad_state == self._VADState.SPEAKING:
+                    vad_bytes = frame.audio
+
+                vad_float = (np.frombuffer(vad_bytes, dtype=np.int16).astype(np.float32) / 32768.0).tolist()
+                if vad_float:
+                    self._silero_float_buffer.extend(vad_float)
+
+                chunk_ms = (self._silero_chunk_size / self._silero_sr) * 1000.0
+
+                # 逐块推理
+                while len(self._silero_float_buffer) >= self._silero_chunk_size:
+                    chunk = self._silero_float_buffer[: self._silero_chunk_size]
+                    del self._silero_float_buffer[: self._silero_chunk_size]
+
+                    chunk_tensor = torch.tensor(chunk, dtype=torch.float32)
+                    speech_prob = float(self._silero_model(chunk_tensor, self._silero_sr).item())
+
+                    if speech_prob >= self.threshold:
+                        self._silero_consec_speech += 1
+                        self._silero_silence_ms = 0.0
+                    else:
+                        self._silero_consec_speech = 0
+                        if self._is_speaking:
+                            self._silero_silence_ms += chunk_ms
+
+                    # 触发开始
+                    if (not self._is_speaking) and self._silero_consec_speech >= self._silero_min_speech_chunks:
                         self._is_speaking = True
+                        self._silence_frames = 0
                         if self._on_speech_start:
                             await self._on_speech_start()
-                        self._prev_vad_state = vad_state
                         return UserStartedSpeakingFrame()
-                    
-                    # SPEAKING → QUIET: 用户停止说话
-                    elif self._prev_vad_state == self._VADState.SPEAKING and vad_state == self._VADState.QUIET:
+
+                    # 触发结束（静音达到阈值）
+                    if self._is_speaking and self._silero_silence_ms >= self.silence_duration_ms:
                         self._is_speaking = False
+                        self._silero_silence_ms = 0.0
+                        self._silence_frames = 0
                         if self._on_speech_end:
                             await self._on_speech_end()
-                        self._prev_vad_state = vad_state
                         return UserStoppedSpeakingFrame()
-                    
-                    # 更新状态
-                    self._prev_vad_state = vad_state
-                    return frame
-                except Exception:
-                    logger.exception("Silero VAD 处理错误，回退到能量检测")
-                    # 禁用 Silero VAD，但保留当前的说话状态和静音计数器
-                    # 这样能量检测 VAD 可以接管并在适当时候发出正确的停止事件
-                    # 不要重置 _is_speaking 和 _silence_frames，以保持会话连续性
-                    # 并确保下游 STT 缓冲区不会被意外中断
-                    self._use_silero = False
-                    self._silero_vad = None
-                    # 注意：保留 _is_speaking 和 _silence_frames 的当前值
-                    # 能量检测 VAD 将从当前状态继续监控，并在检测到
-                    # 静音超过阈值时正确发出 UserStoppedSpeakingFrame
-                    logger.info(
-                        f"VAD 状态转移到能量检测: is_speaking={self._is_speaking}, "
-                        f"silence_frames={self._silence_frames}"
-                    )
-                    # 立即使用当前帧继续进行能量检测处理（不返回，继续执行下面的代码）
+
+                return frame
+
+            except Exception as e:
+                logger.warning(f"Silero VAD 推理失败: {e}，回退到能量检测")
+                self._silero_available = False
+                self._silero_float_buffer = []
+                self._silero_silence_ms = 0.0
+                self._silero_consec_speech = 0
         
         # 回退：简单的能量检测 VAD
         # 计算 RMS 能量
