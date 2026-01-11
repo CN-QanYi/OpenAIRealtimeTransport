@@ -184,8 +184,12 @@ class AudioPlayerAsync:
         """重置帧计数器（用于新的音频响应）"""
         with self._frame_lock:
             self._frame_count = 0
-            # 原子地替换队列以清空所有残留数据，避免无限循环
-            self._queue = queue.Queue()
+        # 清空队列中的残留数据
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
     
     def stop(self) -> None:
         """停止播放"""
