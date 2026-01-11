@@ -15,9 +15,20 @@ logger = logging.getLogger(__name__)
 class BaseSTTProvider(ABC):
     """STT 服务抽象基类"""
     
+    # 默认采样率（与 protocol.py AudioFormat 保持一致）
+    DEFAULT_SAMPLE_RATE: int = 24000
+    
     @abstractmethod
-    async def transcribe(self, audio_bytes: bytes) -> str:
-        """将音频转换为文本"""
+    async def transcribe(self, audio_bytes: bytes, sample_rate: int = DEFAULT_SAMPLE_RATE) -> str:
+        """将音频转换为文本
+        
+        Args:
+            audio_bytes: 原始 PCM 音频数据
+            sample_rate: 音频采样率 (Hz)，默认 24000
+        
+        Returns:
+            转录的文本
+        """
         pass
 
 
@@ -39,7 +50,7 @@ class DeepgramSTTProvider(BaseSTTProvider):
                 raise ImportError("请安装 deepgram-sdk: pip install deepgram-sdk")
         return self._client
     
-    async def transcribe(self, audio_bytes: bytes) -> str:
+    async def transcribe(self, audio_bytes: bytes, sample_rate: int = BaseSTTProvider.DEFAULT_SAMPLE_RATE) -> str:
         """使用 Deepgram 进行语音识别"""
         try:
             from deepgram import PrerecordedOptions
@@ -83,11 +94,16 @@ class OpenAIWhisperSTTProvider(BaseSTTProvider):
                 raise ImportError("请安装 openai: pip install openai")
         return self._client
     
-    async def transcribe(self, audio_bytes: bytes) -> str:
+    async def transcribe(self, audio_bytes: bytes, sample_rate: int = BaseSTTProvider.DEFAULT_SAMPLE_RATE) -> str:
         """使用 OpenAI Whisper 进行语音识别"""
         try:
             import io
             import wave
+            
+            # 验证 sample_rate
+            if not isinstance(sample_rate, int) or sample_rate <= 0:
+                logger.warning(f"sample_rate 无效 ({sample_rate})，使用默认值 {self.DEFAULT_SAMPLE_RATE}")
+                sample_rate = self.DEFAULT_SAMPLE_RATE
             
             client = await self._get_client()
             
@@ -96,7 +112,7 @@ class OpenAIWhisperSTTProvider(BaseSTTProvider):
             with wave.open(wav_buffer, 'wb') as wav_file:
                 wav_file.setnchannels(1)
                 wav_file.setsampwidth(2)
-                wav_file.setframerate(16000)
+                wav_file.setframerate(sample_rate)
                 wav_file.writeframes(audio_bytes)
             wav_buffer.seek(0)
             wav_buffer.name = "audio.wav"
@@ -133,35 +149,36 @@ class LocalWhisperSTTProvider(BaseSTTProvider):
                 raise ImportError("请安装 openai-whisper: pip install openai-whisper")
         return self._model
     
-    async def transcribe(self, audio_bytes: bytes) -> str:
+    async def transcribe(self, audio_bytes: bytes, sample_rate: int = BaseSTTProvider.DEFAULT_SAMPLE_RATE) -> str:
         """使用本地 Whisper 进行语音识别"""
+        import os
+        import tempfile
+        import wave
+        
+        # 验证 sample_rate
+        if not isinstance(sample_rate, int) or sample_rate <= 0:
+            logger.warning(f"sample_rate 无效 ({sample_rate})，使用默认值 {self.DEFAULT_SAMPLE_RATE}")
+            sample_rate = self.DEFAULT_SAMPLE_RATE
+        
+        temp_path: str | None = None
         try:
-            import numpy as np
-            import tempfile
-            import wave
-            import asyncio
-            
             model = self._load_model()
             
             # 将音频写入临时文件
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                with wave.open(f.name, 'wb') as wav_file:
+                temp_path = f.name
+                with wave.open(temp_path, 'wb') as wav_file:
                     wav_file.setnchannels(1)
                     wav_file.setsampwidth(2)
-                    wav_file.setframerate(16000)
+                    wav_file.setframerate(sample_rate)
                     wav_file.writeframes(audio_bytes)
-                temp_path = f.name
             
-            # 在线程池中运行 Whisper
-            loop = asyncio.get_event_loop()
+            # 在线程池中运行 Whisper（使用 asyncio.get_running_loop 替代已弃用的 get_event_loop）
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None, 
                 lambda: model.transcribe(temp_path, language="zh")
             )
-            
-            # 删除临时文件
-            import os
-            os.unlink(temp_path)
             
             transcript = result["text"].strip()
             logger.info(f"📝 转录: {transcript}")
@@ -170,6 +187,13 @@ class LocalWhisperSTTProvider(BaseSTTProvider):
         except Exception as e:
             logger.error(f"本地 Whisper 转录错误: {e}")
             return ""
+        finally:
+            # 确保临时文件始终被删除
+            if temp_path is not None:
+                try:
+                    os.unlink(temp_path)
+                except OSError as unlink_err:
+                    logger.warning(f"删除临时文件失败 ({temp_path}): {unlink_err}")
 
 
 # ==================== LLM 服务抽象基类 ====================

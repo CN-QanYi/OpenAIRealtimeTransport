@@ -306,8 +306,9 @@ class VADService(BaseService):
 class STTService(BaseService):
     """语音转文字服务 - 集成真实的 STT 服务提供商"""
     
-    def __init__(self, language: str = "zh-CN"):
+    def __init__(self, language: str = "zh-CN", sample_rate: int = 24000):
         self.language = language
+        self.sample_rate = sample_rate  # 输入音频的采样率
         self._audio_buffer = b''
         self._on_transcription: Optional[Callable[[str], Awaitable[None]]] = None
         
@@ -340,7 +341,10 @@ class STTService(BaseService):
                 if self._provider:
                     # 使用真实的 STT 服务
                     try:
-                        transcription = await self._provider.transcribe(self._audio_buffer)
+                        transcription = await self._provider.transcribe(
+                            self._audio_buffer, 
+                            sample_rate=self.sample_rate
+                        )
                     except Exception as e:
                         logger.error(f"STT 转录失败: {e}")
                         transcription = "[转录失败]"

@@ -47,7 +47,7 @@ import base64
 import asyncio
 import json
 import logging
-from typing import Any, cast, Optional
+from typing import Any, cast, Optional, TYPE_CHECKING
 from typing_extensions import override
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,12 @@ from textual.containers import Container
 LOCAL_SERVER_URL = "ws://localhost:8000/v1/realtime"
 USE_LOCAL_SERVER = True  # 设置为 True 使用本地服务器，False 使用 OpenAI
 
-# 根据配置选择导入方式
+# TYPE_CHECKING 保护的导入，确保类型检查器可用
+if TYPE_CHECKING:
+    from websockets.asyncio.client import ClientConnection
+    from openai.resources.realtime.realtime import AsyncRealtimeConnection
+
+# 根据配置选择运行时导入方式
 if USE_LOCAL_SERVER:
     import websockets
     from websockets.asyncio.client import ClientConnection
@@ -155,7 +160,7 @@ class RealtimeApp(App[None]):
     connection: Any  # WebSocket 连接或 OpenAI 连接
     session: Any  # 会话对象
     connected: asyncio.Event
-    ws: Optional[ClientConnection] if USE_LOCAL_SERVER else None  # type: ignore
+    ws: Optional["ClientConnection"]  # WebSocket 连接（本地服务器模式）
 
     def __init__(self) -> None:
         super().__init__()

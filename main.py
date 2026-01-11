@@ -53,9 +53,26 @@ app = FastAPI(
 )
 
 # 添加 CORS 中间件
+# 从环境变量加载允许的来源，多个来源用逗号分隔
+# 例如: CORS_ORIGINS="http://localhost:3000,http://localhost:8080"
+# DEBUG 模式下允许所有来源（仅用于开发）
+_cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if config.server.debug:
+    # 开发模式：允许所有来源（不推荐用于生产环境）
+    _cors_allowed_origins = ["*"]
+    logger.warning("CORS: 警告 - DEBUG 模式下允许所有来源 (allow_origins=['*'])，不应用于生产环境")
+else:
+    # 生产模式：仅允许配置的来源
+    if _cors_origins_env:
+        _cors_allowed_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
+    else:
+        # 默认允许本地访问
+        _cors_allowed_origins = ["http://localhost:3000", "http://localhost:8000"]
+    logger.info(f"CORS: 允许的来源: {_cors_allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
