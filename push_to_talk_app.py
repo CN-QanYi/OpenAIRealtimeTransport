@@ -179,6 +179,40 @@ class RealtimeApp(App[None]):
         self.last_audio_item_id = None
         self.connected = asyncio.Event()
 
+    def _maybe_debug_audio_delta(self, bytes_data: bytes) -> None:
+        if not DEBUG_AUDIO_PLAYBACK or not bytes_data:
+            return
+
+        if len(bytes_data) % 2 != 0:
+            self.logger.debug(
+                "AudioDelta: bytes 长度非 2 字节对齐, 跳过 numpy 调试 (bytes=%s frames_in_queue=%s)",
+                len(bytes_data),
+                self.audio_player.frame_count(),
+            )
+            return
+
+        try:
+            import numpy as np
+
+            samples_i16 = np.frombuffer(bytes_data, dtype=np.int16)
+            samples_i32 = samples_i16.astype(np.int32, copy=False)
+            peak = int(np.max(np.abs(samples_i32))) if samples_i32.size else 0
+            self.logger.debug(
+                "AudioDelta: bytes=%s peak=%s frames_in_queue=%s",
+                len(bytes_data),
+                peak,
+                self.audio_player.frame_count(),
+            )
+        except ImportError as dbg_err:
+            self.logger.debug("AudioDelta: numpy 不可用, 跳过调试: %s", dbg_err)
+        except ValueError as dbg_err:
+            self.logger.debug(
+                "AudioDelta: numpy/frombuffer 解析失败, 跳过调试: %s (bytes=%s frames_in_queue=%s)",
+                dbg_err,
+                len(bytes_data),
+                self.audio_player.frame_count(),
+            )
+
     @override
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -241,36 +275,7 @@ class RealtimeApp(App[None]):
                         
                         if delta:
                             bytes_data = base64.b64decode(delta)
-                            if DEBUG_AUDIO_PLAYBACK and bytes_data:
-                                if len(bytes_data) % 2 != 0:
-                                    self.logger.debug(
-                                        "AudioDelta: bytes 长度非 2 字节对齐，跳过 numpy 调试 (bytes=%s frames_in_queue=%s)",
-                                        len(bytes_data),
-                                        self.audio_player.frame_count(),
-                                    )
-                                else:
-                                    try:
-                                        import numpy as np
-
-                                        samples_i16 = np.frombuffer(bytes_data, dtype=np.int16)
-                                        # 避免 int16 的 -32768 在 abs/max 时溢出
-                                        samples_i32 = samples_i16.astype(np.int32, copy=False)
-                                        peak = int(np.max(np.abs(samples_i32))) if samples_i32.size else 0
-                                        self.logger.debug(
-                                            "AudioDelta: bytes=%s peak=%s frames_in_queue=%s",
-                                            len(bytes_data),
-                                            peak,
-                                            self.audio_player.frame_count(),
-                                        )
-                                    except ImportError as dbg_err:
-                                        self.logger.debug("AudioDelta: numpy 不可用，跳过调试: %s", dbg_err)
-                                    except ValueError as dbg_err:
-                                        self.logger.debug(
-                                            "AudioDelta: numpy/frombuffer 解析失败，跳过调试: %s (bytes=%s frames_in_queue=%s)",
-                                            dbg_err,
-                                            len(bytes_data),
-                                            self.audio_player.frame_count(),
-                                        )
+                            self._maybe_debug_audio_delta(bytes_data)
                             self.audio_player.add_data(bytes_data)
                         continue
                     
@@ -356,6 +361,7 @@ class RealtimeApp(App[None]):
                         self.last_audio_item_id = event.item_id
 
                     bytes_data = base64.b64decode(event.delta)
+                    self._maybe_debug_audio_delta(bytes_data)
                     self.audio_player.add_data(bytes_data)
                     continue
 
