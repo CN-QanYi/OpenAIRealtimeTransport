@@ -60,60 +60,50 @@ _cors_origins_env = os.getenv("CORS_ORIGINS", "")
 _cors_allow_credentials = True
 
 
+# 模块顶部定义常量
+_DEFAULT_CORS_ORIGINS = ["http://localhost:3000", "http://localhost:8000"]
+
 def _parse_and_validate_cors_origins(env_value: str, *, debug: bool) -> tuple[list[str], bool]:
     """解析并校验 CORS_ORIGINS.
-
-    Returns:
-        (allowed_origins, allow_credentials)
-    """
+ 
+     Returns:
+         (allowed_origins, allow_credentials)
+     """
     raw = (env_value or "")
     stripped = raw.strip()
 
-    # 空字符串或仅空白: 明确记录采用默认行为
-    if not stripped:
-        if debug:
-            logger.warning(
-                "CORS: 未配置 CORS_ORIGINS (为空/仅空格), DEBUG 模式将使用 allow_origins=['*'];"
-                "allow_credentials 已禁用 (浏览器 CORS 规范要求)."
-            )
-            return ["*"], False
-
-        defaults = ["http://localhost:3000", "http://localhost:8000"]
-        logger.info(
-            "CORS: 未配置 CORS_ORIGINS (为空/仅空格), 生产模式将使用默认来源: %s",
-            defaults,
-        )
-        return defaults, True
-
-    # 非空: 解析并校验 URL 格式
     candidates = [origin.strip() for origin in stripped.split(",") if origin.strip()]
+    
+    # 未配置或仅包含分隔符: 使用默认行为
     if not candidates:
-        # 例如 env_value = "," 或 " , " 等, 仅包含分隔符/空条目, 视为未配置
         if debug:
             logger.warning(
-                "CORS: CORS_ORIGINS 仅包含分隔符/空条目, DEBUG 模式将使用 allow_origins=['*'];"
-                "allow_credentials 已禁用 (浏览器 CORS 规范要求)."
+                "CORS: 未配置 CORS_ORIGINS (为空/仅空格/仅分隔符), DEBUG 模式将使用 allow_origins=['*'];"
+                 "allow_credentials 已禁用 (浏览器 CORS 规范要求)."
             )
             return ["*"], False
 
-        defaults = ["http://localhost:3000", "http://localhost:8000"]
+        defaults = _DEFAULT_CORS_ORIGINS
+        
         logger.info(
-            "CORS: CORS_ORIGINS 仅包含分隔符/空条目, 生产模式将使用默认来源: %s",
-            defaults,
+            "CORS: 未配置 CORS_ORIGINS (为空/仅空格/仅分隔符), 生产模式将使用默认来源: %s",
+            _DEFAULT_CORS_ORIGINS,
         )
-        return defaults, True
+        return _DEFAULT_CORS_ORIGINS, True
+    
+    # 校验 URL 格式
     invalid: list[str] = []
     for origin in candidates:
         parsed = urlparse(origin)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             invalid.append(origin)
-
+ 
     if invalid:
-        raise ValueError(
-            "CORS_ORIGINS 配置包含无效 URL (需要 http/https 且包含主机名), 请修正: "
+         raise ValueError(
+            "CORS_ORIGINS 配置包含无效 URL (需要 http/https 且包含主机名，例如: http://localhost:3000), 请修正: "
             + ", ".join(invalid)
         )
-
+ 
     logger.info("CORS: 允许的来源: %s", candidates)
     return candidates, True
 
