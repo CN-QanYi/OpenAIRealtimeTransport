@@ -1,6 +1,6 @@
 # OpenAI Realtime API Compatible Server
 
-[中文](README.md) | [English](README.en.md)
+[中文](README.md) | [English]
 
 A local WebSocket server that mirrors the OpenAI Realtime API protocol, so you can swap OpenAI with local or third‑party model providers while keeping the client mostly unchanged.
 
