@@ -24,6 +24,9 @@ class SessionState:
     is_active: bool = False
     current_response_id: Optional[str] = None
     current_item_id: Optional[str] = None
+    # TODO: 在 LLM 响应处理中更新这些计数器，
+    # 用于跟踪会话的 token 使用量和计费。
+    # 可以在 LLMService 响应回调中更新，并在 session.created/session.updated 事件中返回。
     total_input_tokens: int = 0
     total_output_tokens: int = 0
 
@@ -139,8 +142,8 @@ class RealtimeSession:
         """运行会话主循环"""
         try:
             await self.transport.run()
-        except Exception as e:
-            logger.error(f"会话运行错误: {e}")
+        except Exception:
+            logger.exception("会话运行错误")
         finally:
             await self.stop()
     
