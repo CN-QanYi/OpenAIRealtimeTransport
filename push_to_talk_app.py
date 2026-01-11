@@ -245,7 +245,7 @@ class RealtimeApp(App[None]):
                                     import numpy as np
                                     samples = np.frombuffer(bytes_data, dtype=np.int16)
                                     peak = int(np.max(np.abs(samples))) if samples.size else 0
-                                    print(f"[AudioDelta] bytes={len(bytes_data)} peak={peak} frames_in_queue={self.audio_player.frame_count}")
+                                    print(f"[AudioDelta] bytes={len(bytes_data)} peak={peak} frames_in_queue={self.audio_player.frame_count()}")
                                 except Exception as dbg_err:
                                     print(f"[AudioDelta] debug 失败: {dbg_err}")
                             self.audio_player.add_data(bytes_data)
