@@ -1,5 +1,7 @@
 # OpenAI Realtime API 兼容服务器
 
+[中文](README.md) | [English](README.en.md)
+
 一个完全复刻 OpenAI Realtime API 协议的本地 WebSocket 服务器，允许你使用本地或第三方模型替代 OpenAI。
 
 ## ✨ 特性
