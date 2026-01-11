@@ -16,7 +16,7 @@ scipy>=1.11.0  # 可选，用于高质量重采样
 pipecat-ai>=0.0.40
 
 # PyTorch - Silero VAD 模型运行时（通过 torch.hub 自动下载 VAD 模型）
-torch>=2.0.0
+torch>=1.12.0
 
 # 环境变量加载
 python-dotenv>=1.0.0

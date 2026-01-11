@@ -281,7 +281,7 @@ VAD_PREFIX_PADDING_MS=300  # 语音前缀填充（毫秒）
 
 完整配置选项请查看 [.env.example](.env.example)
 
-**注意**: 自由麦模式需要 Pipecat 提供的 Silero VAD 支持，已包含在 `pipecat-ai` 依赖中。
+**注意**: 自由麦模式使用 Silero VAD 做语音活动检测；运行时会直接 `import torch`，因此需要安装 PyTorch (`torch`)。
 
 ## 🎯 支持的服务
 

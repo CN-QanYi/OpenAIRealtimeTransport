@@ -85,8 +85,23 @@ def _parse_and_validate_cors_origins(env_value: str, *, debug: bool) -> tuple[li
         )
         return defaults, True
 
-    # 非空：解析并校验 URL 格式
+    # 非空: 解析并校验 URL 格式
     candidates = [origin.strip() for origin in stripped.split(",") if origin.strip()]
+    if not candidates:
+        # 例如 env_value = "," 或 " , " 等, 仅包含分隔符/空条目, 视为未配置
+        if debug:
+            logger.warning(
+                "CORS: CORS_ORIGINS 仅包含分隔符/空条目, DEBUG 模式将使用 allow_origins=['*'];"
+                "allow_credentials 已禁用 (浏览器 CORS 规范要求)."
+            )
+            return ["*"], False
+
+        defaults = ["http://localhost:3000", "http://localhost:8000"]
+        logger.info(
+            "CORS: CORS_ORIGINS 仅包含分隔符/空条目, 生产模式将使用默认来源: %s",
+            defaults,
+        )
+        return defaults, True
     invalid: list[str] = []
     for origin in candidates:
         parsed = urlparse(origin)

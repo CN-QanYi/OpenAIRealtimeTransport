@@ -187,7 +187,7 @@ class RealtimeApp(App[None]):
             self.logger.debug(
                 "AudioDelta: bytes 长度非 2 字节对齐, 跳过 numpy 调试 (bytes=%s frames_in_queue=%s)",
                 len(bytes_data),
-                self.audio_player.frame_count(),
+                self.audio_player.frame_count,
             )
             return
 
@@ -201,7 +201,7 @@ class RealtimeApp(App[None]):
                 "AudioDelta: bytes=%s peak=%s frames_in_queue=%s",
                 len(bytes_data),
                 peak,
-                self.audio_player.frame_count(),
+                self.audio_player.frame_count,
             )
         except ImportError as dbg_err:
             self.logger.debug("AudioDelta: numpy 不可用, 跳过调试: %s", dbg_err)
@@ -210,7 +210,7 @@ class RealtimeApp(App[None]):
                 "AudioDelta: numpy/frombuffer 解析失败, 跳过调试: %s (bytes=%s frames_in_queue=%s)",
                 dbg_err,
                 len(bytes_data),
-                self.audio_player.frame_count(),
+                self.audio_player.frame_count,
             )
 
     @override
