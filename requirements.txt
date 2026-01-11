@@ -26,7 +26,7 @@ aiohttp>=3.9.0
 
 # ==================== STT 服务依赖 ====================
 # Deepgram (推荐，需要 API Key)
-deepgram-sdk>=3.0.0
+deepgram-sdk>=5.0.0
 
 # OpenAI Whisper (需要 API Key)
 openai>=1.0.0

@@ -28,7 +28,7 @@ Realtime API 终端应用 - 自由麦模式
 ####################################################################
 #
 # /// script
-# requires-python = ">=3.9"
+# requires-python = ">=3.10"
 # dependencies = [
 #     "textual",
 #     "numpy",

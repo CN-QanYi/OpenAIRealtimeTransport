@@ -61,7 +61,7 @@ _cors_allow_credentials = True
 
 
 def _parse_and_validate_cors_origins(env_value: str, *, debug: bool) -> tuple[list[str], bool]:
-    """解析并校验 CORS_ORIGINS。
+    """解析并校验 CORS_ORIGINS.
 
     Returns:
         (allowed_origins, allow_credentials)
@@ -69,18 +69,18 @@ def _parse_and_validate_cors_origins(env_value: str, *, debug: bool) -> tuple[li
     raw = (env_value or "")
     stripped = raw.strip()
 
-    # 空字符串或仅空白：明确记录采用默认行为
+    # 空字符串或仅空白: 明确记录采用默认行为
     if not stripped:
         if debug:
             logger.warning(
-                "CORS: 未配置 CORS_ORIGINS（为空/仅空格），DEBUG 模式将使用 allow_origins=['*']；"
-                "allow_credentials 已禁用（浏览器 CORS 规范要求）。"
+                "CORS: 未配置 CORS_ORIGINS (为空/仅空格), DEBUG 模式将使用 allow_origins=['*'];"
+                "allow_credentials 已禁用 (浏览器 CORS 规范要求)."
             )
             return ["*"], False
 
         defaults = ["http://localhost:3000", "http://localhost:8000"]
         logger.info(
-            "CORS: 未配置 CORS_ORIGINS（为空/仅空格），生产模式将使用默认来源: %s",
+            "CORS: 未配置 CORS_ORIGINS (为空/仅空格), 生产模式将使用默认来源: %s",
             defaults,
         )
         return defaults, True
@@ -95,7 +95,7 @@ def _parse_and_validate_cors_origins(env_value: str, *, debug: bool) -> tuple[li
 
     if invalid:
         raise ValueError(
-            "CORS_ORIGINS 配置包含无效 URL（需要 http/https 且包含主机名），请修正: "
+            "CORS_ORIGINS 配置包含无效 URL (需要 http/https 且包含主机名), 请修正: "
             + ", ".join(invalid)
         )
 
