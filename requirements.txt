@@ -1,0 +1,62 @@
+# OpenAI Realtime API 兼容服务器依赖
+
+# Web 框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+
+# 异步支持
+asyncio-mqtt>=0.16.0
+
+# 音频处理
+numpy>=1.24.0
+scipy>=1.11.0  # 可选，用于高质量重采样
+
+# Pipecat - 提供 VAD (语音活动检测) 和其他音频处理功能
+pipecat-ai>=0.0.40
+
+# 环境变量加载
+python-dotenv>=1.0.0
+
+# HTTP 异步客户端
+aiohttp>=3.9.0
+
+# ==================== STT 服务依赖 ====================
+# Deepgram (推荐，需要 API Key)
+deepgram-sdk>=3.0.0
+
+# OpenAI Whisper (需要 API Key)
+openai>=1.0.0
+
+# 本地 Whisper (可选，需要 GPU 效果更好)
+# openai-whisper>=20231117
+
+# ==================== LLM 服务依赖 ====================
+# OpenAI (默认)
+# openai>=1.0.0  # 已包含在上面
+
+# Ollama (本地运行，无需额外依赖，只需 HTTP 请求)
+# Ollama 服务需要单独安装: https://ollama.ai
+
+# ==================== TTS 服务依赖 ====================
+# ElevenLabs (高质量，需要 API Key)
+# elevenlabs>=1.0.0  # 使用 aiohttp 直接调用 API
+
+# Edge TTS (免费，微软 Edge 浏览器 TTS)
+edge-tts>=6.1.0
+
+# OpenAI TTS (需要 API Key)
+# openai>=1.0.0  # 已包含在上面
+
+# ==================== 客户端依赖 ====================
+# TUI 界面
+textual>=0.40.0
+
+# 音频采集
+sounddevice>=0.4.0
+
+# ==================== 开发依赖 ====================
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
+# sounddevice>=0.4.6
+# pyaudio>=0.2.13
