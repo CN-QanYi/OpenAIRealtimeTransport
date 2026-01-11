@@ -46,8 +46,11 @@ from __future__ import annotations
 import base64
 import asyncio
 import json
+import logging
 from typing import Any, cast, Optional
 from typing_extensions import override
+
+logger = logging.getLogger(__name__)
 
 from textual import events
 from audio_utils import CHANNELS, SAMPLE_RATE, AudioPlayerAsync
@@ -354,8 +357,12 @@ class RealtimeApp(App[None]):
                     if not sent_audio:
                         try:
                             await connection.send(json.dumps({"type": "response.cancel"}))
-                        except:
-                            pass
+                        except asyncio.CancelledError:
+                            raise
+                        except (websockets.exceptions.ConnectionClosed, OSError) as send_err:
+                            logger.warning(f"发送 response.cancel 失败: {send_err}")
+                        except Exception as send_err:
+                            logger.error(f"发送 response.cancel 时发生意外错误: {send_err}")
                         sent_audio = True
                     
                     # 发送音频数据（自由麦模式下持续发送，Server VAD会自动检测）
@@ -367,7 +374,12 @@ class RealtimeApp(App[None]):
                 else:
                     # OpenAI SDK
                     if not sent_audio:
-                        asyncio.create_task(connection.send({"type": "response.cancel"}))
+                        try:
+                            await connection.send({"type": "response.cancel"})
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as send_err:
+                            logger.warning(f"发送 response.cancel 失败: {send_err}")
                         sent_audio = True
 
                     await connection.input_audio_buffer.append(audio=base64.b64encode(cast(Any, data)).decode("utf-8"))

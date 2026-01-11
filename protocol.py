@@ -4,8 +4,9 @@
 """
 import uuid
 import time
+import copy
 from enum import Enum
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from typing import Optional, List, Dict, Any, Union
 
 
@@ -296,11 +297,11 @@ class ServerEventBuilder:
     @staticmethod
     def response_done(response: Response, event_id: Optional[str] = None) -> Dict[str, Any]:
         """构建响应完成事件"""
-        response.status = "completed"
+        completed_response = replace(response, status="completed")
         return {
             "event_id": event_id or generate_id("evt"),
             "type": ServerEventType.RESPONSE_DONE.value,
-            "response": response.to_dict()
+            "response": completed_response.to_dict()
         }
     
     @staticmethod
@@ -321,13 +322,19 @@ class ServerEventBuilder:
                                   output_index: int = 0,
                                   event_id: Optional[str] = None) -> Dict[str, Any]:
         """构建响应输出项完成事件"""
-        item.status = "completed"
+        # 创建副本以避免修改原始对象
+        item_dict = item.to_dict() if hasattr(item, 'to_dict') else copy.copy(item)
+        if isinstance(item_dict, dict):
+            item_dict["status"] = "completed"
+        else:
+            item_dict = copy.copy(item_dict)
+            item_dict.status = "completed"
         return {
             "event_id": event_id or generate_id("evt"),
             "type": ServerEventType.RESPONSE_OUTPUT_ITEM_DONE.value,
             "response_id": response_id,
             "output_index": output_index,
-            "item": item.to_dict() if hasattr(item, 'to_dict') else item,
+            "item": item_dict,
         }
     
     @staticmethod

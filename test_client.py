@@ -210,6 +210,7 @@ class RealtimeTestClient:
 async def run_tests():
     """运行所有测试"""
     client = RealtimeTestClient()
+    receive_task = None
     
     try:
         await client.connect()
@@ -241,12 +242,22 @@ async def run_tests():
     except Exception as e:
         print(f"测试错误: {e}")
     finally:
+        # 确保正确取消和清理接收任务
+        if receive_task is not None and not receive_task.done():
+            receive_task.cancel()
+            try:
+                await receive_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as task_err:
+                print(f"接收任务异常: {task_err}")
         await client.disconnect()
 
 
 async def interactive_client():
     """交互式客户端"""
     client = RealtimeTestClient()
+    receive_task = None
     
     try:
         await client.connect()
@@ -264,7 +275,7 @@ async def interactive_client():
         print("  q - 退出")
         
         while True:
-            cmd = await asyncio.get_event_loop().run_in_executor(None, input, "\n请输入命令: ")
+            cmd = await asyncio.to_thread(input, "\n请输入命令: ")
             
             if cmd == "1":
                 await client.test_session_update()
@@ -288,6 +299,15 @@ async def interactive_client():
     except Exception as e:
         print(f"错误: {e}")
     finally:
+        # 确保正确取消和清理接收任务
+        if receive_task is not None and not receive_task.done():
+            receive_task.cancel()
+            try:
+                await receive_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as task_err:
+                print(f"接收任务异常: {task_err}")
         await client.disconnect()
 
 

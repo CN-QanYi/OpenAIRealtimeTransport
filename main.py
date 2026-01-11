@@ -139,8 +139,10 @@ async def websocket_realtime(
         logger.error(f"WebSocket 错误: {e}")
         try:
             await websocket.close(code=1011, reason=str(e))
-        except:
-            pass
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except Exception as close_err:
+            logger.warning(f"关闭 WebSocket 时出错 (原始错误: {e}): {close_err}")
     finally:
         # 清理会话
         if session:

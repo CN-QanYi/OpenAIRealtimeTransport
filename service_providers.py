@@ -2,6 +2,7 @@
 服务提供商工厂 - 根据配置创建对应的 STT/LLM/TTS 服务实例
 """
 import os
+import asyncio
 import logging
 from typing import Optional, Callable, Awaitable
 from abc import ABC, abstractmethod
@@ -303,26 +304,35 @@ class OllamaLLMProvider(BaseLLMProvider):
             
             full_response = ""
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "stream": True,
-                        "options": {"temperature": self.temperature}
-                    }
-                ) as response:
-                    async for line in response.content:
-                        if line:
-                            try:
-                                data = json.loads(line.decode())
-                                if "message" in data and "content" in data["message"]:
-                                    text = data["message"]["content"]
-                                    full_response += text
-                                    await on_chunk(text)
-                            except json.JSONDecodeError:
-                                continue
+            # 配置超时：连接超时10秒，总超时300秒（5分钟，适合流式响应）
+            timeout = aiohttp.ClientTimeout(total=300, connect=10)
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(
+                        f"{self.base_url}/api/chat",
+                        json={
+                            "model": self.model,
+                            "messages": messages,
+                            "stream": True,
+                            "options": {"temperature": self.temperature}
+                        }
+                    ) as response:
+                        async for line in response.content:
+                            if line:
+                                try:
+                                    data = json.loads(line.decode())
+                                    if "message" in data and "content" in data["message"]:
+                                        text = data["message"]["content"]
+                                        full_response += text
+                                        await on_chunk(text)
+                                except json.JSONDecodeError:
+                                    continue
+            except asyncio.TimeoutError:
+                logger.error(f"Ollama 请求超时 (base_url: {self.base_url})")
+                return "抱歉，请求超时，请稍后重试。"
+            except aiohttp.ClientError as client_err:
+                logger.error(f"Ollama 连接错误: {client_err}")
+                return f"抱歉，无法连接到 Ollama 服务: {str(client_err)}"
             
             # 添加助手响应到历史
             self._conversation_history.append({"role": "assistant", "content": full_response})
@@ -389,15 +399,24 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             
             full_audio = b""
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        async for chunk in response.content.iter_chunked(4096):
-                            full_audio += chunk
-                            await on_audio_chunk(chunk)
-                    else:
-                        error = await response.text()
-                        logger.error(f"ElevenLabs TTS 错误: {error}")
+            # 配置超时：连接超时10秒，总超时60秒
+            timeout = aiohttp.ClientTimeout(total=60, connect=10)
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        if response.status == 200:
+                            async for chunk in response.content.iter_chunked(4096):
+                                full_audio += chunk
+                                await on_audio_chunk(chunk)
+                        else:
+                            error = await response.text()
+                            logger.error(f"ElevenLabs TTS 错误: {error}")
+            except asyncio.TimeoutError:
+                logger.error(f"ElevenLabs TTS 请求超时 (voice_id: {self.voice_id})")
+                return b""
+            except aiohttp.ClientError as client_err:
+                logger.error(f"ElevenLabs TTS 连接错误: {client_err}")
+                return b""
             
             logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
             return full_audio
