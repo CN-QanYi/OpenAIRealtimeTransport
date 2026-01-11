@@ -103,8 +103,12 @@ class RealtimeSession:
         self.state.is_active = True
         
         # 配置管道
-        # 根据不同的 LLM 提供商选择模型名称
-        if config.llm.provider == "openai":
+        # 优先使用请求中指定的模型，否则根据配置的 LLM 提供商选择模型
+        if self.model:
+            # 使用请求中指定的模型名称
+            llm_model = self.model
+            logger.info(f"使用请求指定的模型: {llm_model}")
+        elif config.llm.provider == "openai":
             llm_model = config.llm.openai_model
         elif config.llm.provider == "ollama":
             llm_model = config.llm.ollama_model
