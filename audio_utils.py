@@ -90,7 +90,7 @@ class AudioConverter:
     """
     音频格式转换器
     
-    负责在客户端格式（24kHz）和内部处理格式（16kHz）之间转换
+    负责在客户端格式 (24kHz) 和内部处理格式 (16kHz) 之间转换
     """
     
     def __init__(self):
@@ -100,25 +100,25 @@ class AudioConverter:
     
     def client_to_internal(self, audio_bytes: bytes) -> bytes:
         """
-        将客户端音频（24kHz）转换为内部处理格式（16kHz）
+        将客户端音频 (24kHz) 转换为内部处理格式 (16kHz)
         
         Args:
-            audio_bytes: 客户端 PCM 音频数据（24kHz）
+            audio_bytes: 客户端 PCM 音频数据 (24kHz)
         
         Returns:
-            内部处理 PCM 音频数据（16kHz）
+            内部处理 PCM 音频数据 (16kHz)
         """
         return resample_to_16k(audio_bytes, from_rate=self.client_sample_rate)
     
     def internal_to_client(self, audio_bytes: bytes) -> bytes:
         """
-        将内部处理音频（16kHz）转换为客户端格式（24kHz）
+        将内部处理音频 (16kHz) 转换为客户端格式 (24kHz)
         
         Args:
-            audio_bytes: 内部处理 PCM 音频数据（16kHz）
+            audio_bytes: 内部处理 PCM 音频数据 (16kHz)
         
         Returns:
-            客户端 PCM 音频数据（24kHz）
+            客户端 PCM 音频数据 (24kHz)
         """
         return resample_to_24k(audio_bytes, from_rate=self.internal_sample_rate)
 
@@ -322,14 +322,14 @@ class AudioBuffer:
 
 def calculate_audio_duration_ms(audio_bytes: bytes, sample_rate: int = SAMPLE_RATE) -> float:
     """
-    计算音频数据的时长（毫秒）
+    计算音频数据的时长 (毫秒)
     
     Args:
         audio_bytes: PCM 音频数据
-        sample_rate: 采样率（默认 24kHz）
+        sample_rate: 采样率 (默认 24kHz)
     
     Returns:
-        音频时长（毫秒）
+        音频时长 (毫秒)
     """
     num_samples = len(audio_bytes) // (SAMPLE_WIDTH * CHANNELS)
     duration_ms = (num_samples / sample_rate) * 1000
