@@ -18,13 +18,14 @@ A local WebSocket server that mirrors the OpenAI Realtime API protocol, so you c
 ```
 ├── main.py                 # FastAPI server entry
 ├── config.py               # Config management (.env supported)
+├── logger_config.py        # Logging configuration module
 ├── service_providers.py    # STT/LLM/TTS provider implementations
 ├── protocol.py             # OpenAI Realtime API protocol definitions
 ├── transport.py            # WebSocket Transport layer (protocol translator)
 ├── pipeline_manager.py     # Pipeline manager
 ├── realtime_session.py     # Session lifecycle manager
 ├── audio_utils.py          # Audio utilities (resampling/playback, etc.)
-├── push_to_talk_app.py     # Terminal client (recommended)
+├── push_to_talk_app.py     # Terminal client (open-mic mode)
 ├── test_client.py          # Simple test client
 └── requirements.txt        # Python dependencies
 ```
@@ -140,7 +141,9 @@ Client ← OpenAI-style JSON ← Transport (translate) ← (VAD → STT → LLM 
    - WebSocket session lifecycle; connects Transport ↔ Pipeline
 
 4. **Audio Utilities** ([audio_utils.py](audio_utils.py))
-   - Resampling and playback helpers
+   - Audio resampling (24kHz ↔ 16kHz)
+   - Audio buffer management
+   - Async audio player for client
 
 ## 📄 License
 
