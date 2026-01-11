@@ -104,7 +104,7 @@ class AudioPlayerAsync:
         """
         self.sample_rate = sample_rate
         self.channels = channels
-        self._queue: queue.Queue[Optional[bytes]] = queue.Queue()
+        self._queue = queue.Queue()  # 避免 Python 3.8 下的 TypeError
         self._frame_count = 0
         self._frame_lock = threading.Lock()  # 保护 _frame_count 的锁
         self._playing = False
@@ -196,14 +196,19 @@ class AudioPlayerAsync:
     
     @property
     def frame_count(self) -> int:
-        """获取已播放的帧数"""
+        """获取已入队的音频块数量（非"已播放"）"""
         with self._frame_lock:
             return self._frame_count
     
     def __del__(self) -> None:
         """析构时停止播放"""
-        self.stop()
-
+        try:
+            if self._thread is not None and threading.current_thread() is self._thread:
+                self._stop_event.set()
+                return
+            self.stop()
+        except Exception:
+            pass
 
 # ==================== 音频缓冲区 ====================
 
