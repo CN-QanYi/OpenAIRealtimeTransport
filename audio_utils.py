@@ -106,6 +106,7 @@ class AudioPlayerAsync:
         self.channels = channels
         self._queue: queue.Queue[Optional[bytes]] = queue.Queue()
         self._frame_count = 0
+        self._frame_lock = threading.Lock()  # 保护 _frame_count 的锁
         self._playing = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -176,11 +177,13 @@ class AudioPlayerAsync:
             audio_bytes: PCM 音频数据
         """
         self._queue.put(audio_bytes)
-        self._frame_count += 1
+        with self._frame_lock:
+            self._frame_count += 1
     
     def reset_frame_count(self) -> None:
         """重置帧计数器（用于新的音频响应）"""
-        self._frame_count = 0
+        with self._frame_lock:
+            self._frame_count = 0
         # 清空队列中的残留数据
         while True:
             try:
@@ -198,7 +201,8 @@ class AudioPlayerAsync:
     @property
     def frame_count(self) -> int:
         """获取已播放的帧数"""
-        return self._frame_count
+        with self._frame_lock:
+            return self._frame_count
     
     def __del__(self) -> None:
         """析构时停止播放"""
