@@ -233,7 +233,16 @@ VAD 配置:
 - 使用科学上网工具
 - 或手动下载模型后放置到 `~/.cache/whisper/` 目录
 
-### 3. Ollama 连接失败
+### 4. Server VAD / Silero VAD 不可用
+
+**问题**: 日志提示 Silero VAD 不可用，或自动回退到简单的能量检测
+
+**原因**: 自由麦模式下的 Silero VAD 推理会直接 `import torch`，如果未安装 PyTorch (`torch`) 将无法启用
+
+**解决**:
+- 安装/升级 PyTorch：`pip install torch`（也可按你的 CUDA/CPU 环境选择官方安装命令）
+
+### 5. Ollama 连接失败
 
 **问题**: `LLM_PROVIDER=ollama` 时提示连接失败
 
@@ -242,7 +251,7 @@ VAD 配置:
 2. 检查 `OLLAMA_BASE_URL` 是否正确
 3. 运行 `ollama list` 确认模型已下载
 
-### 4. 麦克风无法识别
+### 6. 麦克风无法识别
 
 **问题**: 客户端无法捕获音频
 

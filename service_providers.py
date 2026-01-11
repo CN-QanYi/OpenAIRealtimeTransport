@@ -44,8 +44,9 @@ class DeepgramSTTProvider(BaseSTTProvider):
     async def _get_client(self):
         if self._client is None:
             try:
-                from deepgram import DeepgramClient, PrerecordedOptions
-                self._client = DeepgramClient(self.api_key)
+                # deepgram-sdk>=5 使用关键字参数初始化；并提供 AsyncDeepgramClient 用于异步调用
+                from deepgram import AsyncDeepgramClient
+                self._client = AsyncDeepgramClient(api_key=self.api_key)
             except ImportError as err:
                 raise ImportError("请安装 deepgram-sdk: pip install deepgram-sdk") from err
         return self._client
@@ -53,21 +54,41 @@ class DeepgramSTTProvider(BaseSTTProvider):
     async def transcribe(self, audio_bytes: bytes, sample_rate: int = BaseSTTProvider.DEFAULT_SAMPLE_RATE) -> str:
         """使用 Deepgram 进行语音识别"""
         try:
-            from deepgram import PrerecordedOptions
-            
             client = await self._get_client()
-            
-            options = PrerecordedOptions(
+
+            if not audio_bytes:
+                return ""
+
+            # 防御性处理：PCM16 必须 2 字节对齐
+            if len(audio_bytes) % 2 != 0:
+                logger.warning("Deepgram: audio_bytes 长度非 2 字节对齐，已截断最后 1 字节")
+                audio_bytes = audio_bytes[:-1]
+
+            # Deepgram 对 raw PCM 的参数组合非常敏感（采样率/编码/头信息不匹配会报 400）。
+            # 这里统一封装为 WAV 再上传，让服务端按 WAV 头解析。
+            import io
+            import wave
+            wav_buffer = io.BytesIO()
+            with wave.open(wav_buffer, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(int(sample_rate))
+                wav_file.writeframes(audio_bytes)
+            wav_bytes = wav_buffer.getvalue()
+
+            from deepgram.core.request_options import RequestOptions
+            request_options = RequestOptions(
+                additional_headers={
+                    "Content-Type": "audio/wav",
+                }
+            )
+
+            response = await client.listen.v1.media.transcribe_file(
+                request=wav_bytes,
                 model=self.model,
                 language=self.language,
                 smart_format=True,
-                sample_rate=sample_rate,  # 传递采样率到 Deepgram
-            )
-            
-            # 使用 audio/raw 并在 mimetype 中指定采样率和编码
-            response = await client.listen.asyncrest.v("1").transcribe_file(
-                {"buffer": audio_bytes, "mimetype": f"audio/raw;encoding=linear16;sample_rate={sample_rate}"},
-                options
+                request_options=request_options,
             )
             
             transcript = response.results.channels[0].alternatives[0].transcript
@@ -466,26 +487,79 @@ class EdgeTTSProvider(BaseTTSProvider):
         """流式合成 Edge TTS 语音"""
         try:
             import edge_tts
-            import io
+
+            text = (text or "").strip()
+            if not text:
+                logger.info("Edge TTS: 文本为空，跳过合成")
+                return b""
+
+            # 可选：通过环境变量配置代理与超时（适合国内网络环境）
+            proxy = os.getenv("EDGE_TTS_PROXY") or None
+            try:
+                connect_timeout = int(os.getenv("EDGE_TTS_CONNECT_TIMEOUT", "10"))
+            except ValueError:
+                connect_timeout = 10
+            try:
+                receive_timeout = int(os.getenv("EDGE_TTS_RECEIVE_TIMEOUT", "60"))
+            except ValueError:
+                receive_timeout = 60
+
+            # 失败时自动回退 voice（常见原因：voice 名不支持 / 服务端无音频返回）
+            candidate_voices = [
+                self.voice,
+                "zh-CN-XiaoxiaoNeural",
+                "zh-CN-YunxiNeural",
+                "zh-CN-YunjianNeural",
+            ]
+            seen = set()
+            voices_to_try = [v for v in candidate_voices if v and not (v in seen or seen.add(v))]
             
-            communicate = edge_tts.Communicate(text, self.voice)
-            
-            full_audio = b""
-            
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_data = chunk["data"]
-                    full_audio += audio_data
-                    await on_audio_chunk(audio_data)
-            
-            logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
-            return full_audio
+            last_error: Exception | None = None
+            for voice in voices_to_try:
+                try:
+                    communicate = edge_tts.Communicate(
+                        text,
+                        voice,
+                        proxy=proxy,
+                        connect_timeout=connect_timeout,
+                        receive_timeout=receive_timeout,
+                    )
+
+                    full_audio = b""
+                    async for chunk in communicate.stream():
+                        if chunk["type"] == "audio":
+                            audio_data = chunk["data"]
+                            full_audio += audio_data
+                            await on_audio_chunk(audio_data)
+
+                    if full_audio:
+                        logger.debug(f"🔊 TTS 完成 (voice={voice}): {len(full_audio)} bytes")
+                        return full_audio
+
+                    # stream 结束但没有任何音频块
+                    last_error = RuntimeError("No audio was received")
+                    logger.warning(f"Edge TTS 无音频返回，尝试切换 voice: {voice}")
+
+                except Exception as e:
+                    last_error = e
+                    msg = str(e)
+                    # 对可恢复错误尝试下一个 voice
+                    if "No audio was received" in msg or "voice" in msg.lower():
+                        logger.warning(f"Edge TTS 失败 (voice={voice}): {e}，尝试下一个 voice")
+                        continue
+                    # 其他错误（网络/协议）也尝试一次回退，但避免刷屏
+                    logger.warning(f"Edge TTS 失败 (voice={voice}): {e}")
+                    continue
+
+            diagnostic = ""
+            if not proxy and last_error and "No audio was received" in str(last_error):
+                diagnostic = " 如果未配置代理，请检查 EDGE_TTS_PROXY 配置以排查 'No audio was received' 问题"
+
+            logger.error(f"Edge TTS 错误: {last_error}{diagnostic}")
+            return b""
             
         except ImportError:
             raise ImportError("请安装 edge-tts: pip install edge-tts")
-        except Exception as e:
-            logger.error(f"Edge TTS 错误: {e}")
-            return b""
 
 
 class OpenAITTSProvider(BaseTTSProvider):
@@ -519,30 +593,49 @@ class OpenAITTSProvider(BaseTTSProvider):
         on_audio_chunk: Callable[[bytes], Awaitable[None]]
     ) -> bytes:
         """流式合成 OpenAI TTS 语音"""
-        try:
-            client = await self._get_client()
-            
-            response = await client.audio.speech.create(
-                model=self.model,
-                voice=self.voice,
-                input=text,
-                response_format="pcm"  # 16-bit PCM
-            )
-            
-            full_audio = response.content
-            
-            # 分块发送
-            chunk_size = 4096
-            for i in range(0, len(full_audio), chunk_size):
-                chunk = full_audio[i:i+chunk_size]
-                await on_audio_chunk(chunk)
-            
-            logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
-            return full_audio
-            
-        except Exception as e:
-            logger.error(f"OpenAI TTS 错误: {e}")
+        client = await self._get_client()
+
+        text = (text or "").strip()
+        if not text:
+            logger.info("OpenAI TTS: 文本为空，跳过合成")
             return b""
+        
+        response = await client.audio.speech.create(
+            model=self.model,
+            voice=self.voice,
+            input=text,
+            response_format="pcm"  # 16-bit PCM
+        )
+        
+        full_audio = response.content
+        if not full_audio:
+            return b""
+
+        # PCM16 必须 2 字节对齐
+        if len(full_audio) % 2 != 0:
+            full_audio = full_audio[:-1]
+
+        # 统一到内部 16kHz。
+        # 重要：如果重采样失败，不能把 24kHz 的音频当作 16kHz 往下游送，否则会造成
+        # frame.sample_rate 元数据不一致，影响时长计算、静音检测等逻辑。
+        from audio_utils import resample_audio, SAMPLE_RATE as _CLIENT_SR, INTERNAL_SAMPLE_RATE as _INTERNAL_SR
+        try:
+            full_audio = resample_audio(full_audio, from_rate=_CLIENT_SR, to_rate=_INTERNAL_SR)
+        except Exception as e:
+            logger.error(
+                "OpenAI TTS: 24kHz->16kHz 重采样失败，为避免 sample_rate 元数据不一致，本次合成将中断: %s",
+                e,
+            )
+            raise
+        
+        # 分块发送
+        chunk_size = 4096
+        for i in range(0, len(full_audio), chunk_size):
+            chunk = full_audio[i:i+chunk_size]
+            await on_audio_chunk(chunk)
+        
+        logger.debug(f"🔊 TTS 完成: {len(full_audio)} bytes")
+        return full_audio
 
 
 # ==================== 服务工厂 ====================
