@@ -50,11 +50,9 @@ LLM 服务: siliconflow
 
 | 模型 | 说明 | 适用场景 |
 |------|------|----------|
-| `Qwen/Qwen2.5-7B-Instruct` | 通义千问 7B | 日常对话，推荐 ⭐ |
-| `Qwen/Qwen2.5-72B-Instruct` | 通义千问 72B | 复杂任务，高质量 |
-| `deepseek-ai/DeepSeek-V2.5` | DeepSeek V2.5 | 代码生成，推理 |
-| `01-ai/Yi-1.5-34B-Chat` | Yi 34B | 中文对话优化 |
-| `meta-llama/Llama-3.1-70B-Instruct` | Llama 3.1 70B | 英文对话 |
+| `deepseek-ai/DeepSeek-V3.2` | DeepSeek V3.2 | 日常对话，推荐 ⭐ |
+| `deepseek-ai/DeepSeek-V3.1-Terminus` | DeepSeek V3.1 | 代码生成，推理 |
+| `Qwen/Qwen3-Coder-480B-A35B-Instruct` | 通义千问3 480B | 代码生成，推理 |
 
 ## 完整配置示例
 
