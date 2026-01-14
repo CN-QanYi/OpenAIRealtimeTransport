@@ -49,7 +49,7 @@
    # 硅基流动 LLM (国内访问快，价格便宜，推荐！)
    LLM_PROVIDER=siliconflow
    SILICONFLOW_API_KEY=你的_siliconflow_key
-   SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+   SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
    
    # 或使用 OpenAI LLM
    # LLM_PROVIDER=openai
