@@ -28,7 +28,7 @@
 # 使用硅基流动
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=sk-your-api-key-here
-SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 ```
 
@@ -42,7 +42,7 @@ python main.py
 ```
 LLM 服务: siliconflow
   - API Key: sk-ab****xyz9
-  - 模型: Qwen/Qwen2.5-7B-Instruct
+  - 模型: deepseek-ai/DeepSeek-V3.2
   - Base URL: https://api.siliconflow.cn/v1
 ```
 
@@ -66,7 +66,7 @@ WHISPER_MODEL=base
 # LLM: 硅基流动（便宜快速）
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=sk-your-key
-SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 
 # TTS: Edge TTS（免费）
 TTS_PROVIDER=edge_tts
@@ -83,7 +83,7 @@ DEEPGRAM_API_KEY=your-key
 # LLM: 硅基流动
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=sk-your-key
-SILICONFLOW_MODEL=Qwen/Qwen2.5-72B-Instruct
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 
 # TTS: Edge TTS（免费）
 TTS_PROVIDER=edge_tts
@@ -100,7 +100,7 @@ DEEPGRAM_API_KEY=your-key
 # LLM: 硅基流动（大模型）
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=sk-your-key
-SILICONFLOW_MODEL=Qwen/Qwen2.5-72B-Instruct
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.1-Terminus
 
 # TTS: ElevenLabs（高质量）
 TTS_PROVIDER=elevenlabs
@@ -113,9 +113,9 @@ ELEVENLABS_API_KEY=your-key
 
 | 模型 | 输入价格 | 输出价格 |
 |------|---------|---------|
-| Qwen2.5-7B | ¥0.35/M tokens | ¥0.35/M tokens |
-| Qwen2.5-72B | ¥4.13/M tokens | ¥4.13/M tokens |
-| DeepSeek-V2.5 | ¥1.33/M tokens | ¥1.33/M tokens |
+| DeepSeek-V3.2 | ¥2/M tokens | ¥3/M tokens |
+| DeepSeek-V3.1 | ¥4/M tokens | ¥12/M tokens |
+| Qwen3-480B | ¥8/M tokens | ¥16/M tokens |
 
 相比之下，OpenAI GPT-4o 的价格约为：
 - 输入: ¥35/M tokens
@@ -136,14 +136,14 @@ python -c "from service_providers import ServiceFactory; provider = ServiceFacto
 如果想切换到其他模型，只需修改 `.env` 中的 `SILICONFLOW_MODEL`：
 
 ```bash
-# 使用 DeepSeek V2.5
-SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V2.5
+# 使用 DeepSeek V3.2
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 
-# 使用 Qwen 72B
-SILICONFLOW_MODEL=Qwen/Qwen2.5-72B-Instruct
+# 使用 DeepSeek V3.1
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.1-Terminus
 
-# 使用 Yi 34B
-SILICONFLOW_MODEL=01-ai/Yi-1.5-34B-Chat
+# 使用 Qwen3 480B
+SILICONFLOW_MODEL=Qwen/Qwen3-Coder-480B-A35B-Instruct
 ```
 
 重启服务器即可生效。
@@ -160,7 +160,7 @@ A: 同一时间只能使用一个提供商。如需切换，修改 `LLM_PROVIDER
 A: 作为国内主流的 AI 服务提供商，服务稳定性良好。建议配置重试机制。
 
 ### Q: 是否支持函数调用（Function Calling）？
-A: 硅基流动支持函数调用，但需要模型本身支持该特性（如 Qwen2.5 系列）。
+A: 硅基流动支持函数调用，但需要模型本身支持该特性（如 Qwen3 系列）。
 
 ## 技术实现
 
@@ -170,7 +170,7 @@ A: 硅基流动支持函数调用，但需要模型本身支持该特性（如 Q
 # 在 service_providers.py 中
 "siliconflow": lambda: OpenAILLMProvider(
     api_key=os.getenv("SILICONFLOW_API_KEY", ""),
-    model=os.getenv("SILICONFLOW_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+    model=os.getenv("SILICONFLOW_MODEL", "deepseek-ai/DeepSeek-V3.2"),
     base_url=os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"),
     temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
     max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096"))
@@ -188,7 +188,7 @@ A: 硅基流动支持函数调用，但需要模型本身支持该特性（如 Q
 🎯 **最佳性价比组合**：
 ```
 STT: Deepgram (每月200分钟免费)
-LLM: SiliconFlow Qwen2.5-7B (便宜快速)
+LLM: deepseek-ai/DeepSeek-V3.2 (便宜快速)
 TTS: Edge TTS (完全免费)
 ```
 
