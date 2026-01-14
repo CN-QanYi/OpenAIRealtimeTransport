@@ -63,7 +63,7 @@ Recommended for users in mainland China (example):
 ```bash
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=your_api_key
-SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 
 TTS_PROVIDER=edge_tts
 EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
@@ -144,6 +144,42 @@ Client ← OpenAI-style JSON ← Transport (translate) ← (VAD → STT → LLM 
    - Audio resampling (24kHz ↔ 16kHz)
    - Audio buffer management
    - Async audio player for client
+
+## 📊 Supported Services
+
+### STT (Speech-to-Text)
+| Provider | Config Value | Notes | API Key |
+|----------|--------------|-------|---------|
+| **Deepgram** 🌟 | `deepgram` | High quality, 200 min/month free | Required |
+| OpenAI Whisper | `openai_whisper` | OpenAI official API | Required |
+| Local Whisper | `local_whisper` | Completely free, needs model download | Not required |
+
+### LLM (Language Model)
+| Provider | Config Value | Notes | API Key |
+|----------|--------------|-------|---------|
+| **SiliconFlow** 🌟 | `siliconflow` | Fast in China, ~1/10 OpenAI price | Required |
+| OpenAI | `openai` | GPT-4o and other models | Required |
+| Ollama | `ollama` | Local, completely free | Not required |
+
+### TTS (Text-to-Speech)
+| Provider | Config Value | Notes | API Key |
+|----------|--------------|-------|---------|
+| **Edge TTS** 🌟 | `edge_tts` | Microsoft Edge TTS, free | Not required |
+| ElevenLabs | `elevenlabs` | High quality, 10k chars/month free | Required |
+| OpenAI TTS | `openai_tts` | OpenAI official TTS | Required |
+
+🌟 = Recommended
+
+## 📝 Configuration
+
+All configuration is done via `.env` file. See [.env.example](.env.example) for the complete template.
+
+### VAD Configuration (Open-mic mode)
+```bash
+VAD_THRESHOLD=0.5          # Sensitivity (0.0-1.0), higher = less sensitive
+VAD_SILENCE_DURATION_MS=500  # Silence detection duration (ms)
+VAD_PREFIX_PADDING_MS=300    # Speech prefix padding (ms)
+```
 
 ## 📄 License
 

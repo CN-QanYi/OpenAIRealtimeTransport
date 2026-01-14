@@ -51,8 +51,8 @@ LLM 服务: siliconflow
 | 模型 | 说明 | 适用场景 |
 |------|------|----------|
 | `deepseek-ai/DeepSeek-V3.2` | DeepSeek V3.2 | 日常对话，推荐 ⭐ |
-| `deepseek-ai/DeepSeek-V3.1-Terminus` | DeepSeek V3.1 | 代码生成，推理 |
-| `Qwen/Qwen3-Coder-480B-A35B-Instruct` | 通义千问3 480B | 代码生成，推理 |
+| `deepseek-ai/DeepSeek-R1` | DeepSeek R1 推理模型 | 代码生成，复杂推理 |
+| `Qwen/Qwen3-235B-A22B` | 通义千问3 235B | 高质量对话，推理 |
 
 ## 完整配置示例
 
@@ -100,7 +100,7 @@ DEEPGRAM_API_KEY=your-key
 # LLM: 硅基流动（大模型）
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=sk-your-key
-SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.1-Terminus
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-R1
 
 # TTS: ElevenLabs（高质量）
 TTS_PROVIDER=elevenlabs
@@ -114,8 +114,8 @@ ELEVENLABS_API_KEY=your-key
 | 模型 | 输入价格 | 输出价格 |
 |------|---------|---------|
 | DeepSeek-V3.2 | ¥2/M tokens | ¥3/M tokens |
-| DeepSeek-V3.1 | ¥4/M tokens | ¥12/M tokens |
-| Qwen3-480B | ¥8/M tokens | ¥16/M tokens |
+| DeepSeek-R1 | ¥4/M tokens | ¥16/M tokens |
+| Qwen3-235B-A22B | ¥8/M tokens | ¥16/M tokens |
 
 相比之下，OpenAI GPT-4o 的价格约为：
 - 输入: ¥35/M tokens
@@ -139,11 +139,11 @@ python -c "from service_providers import ServiceFactory; provider = ServiceFacto
 # 使用 DeepSeek V3.2
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 
-# 使用 DeepSeek V3.1
-SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.1-Terminus
+# 使用 DeepSeek R1（推理模型）
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-R1
 
-# 使用 Qwen3 480B
-SILICONFLOW_MODEL=Qwen/Qwen3-Coder-480B-A35B-Instruct
+# 使用 Qwen3 235B
+SILICONFLOW_MODEL=Qwen/Qwen3-235B-A22B
 ```
 
 重启服务器即可生效。
