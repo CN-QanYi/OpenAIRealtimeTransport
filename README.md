@@ -77,7 +77,7 @@ nano .env
 # 使用硅基流动 LLM（快速且便宜）
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=你的_api_key
-SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 
 # 使用 Edge TTS（完全免费）
 TTS_PROVIDER=edge_tts
@@ -110,7 +110,7 @@ python main.py
 ==================================================
 STT 服务: deepgram
 LLM 服务: siliconflow
-  - 模型: Qwen/Qwen2.5-7B-Instruct
+  - 模型: deepseek-ai/DeepSeek-V3.2
 TTS 服务: edge_tts
 ==================================================
 ```
@@ -253,7 +253,7 @@ DEEPGRAM_LANGUAGE=zh-CN
 # 硅基流动（推荐）
 LLM_PROVIDER=siliconflow
 SILICONFLOW_API_KEY=你的_api_key
-SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V3.2
 
 # 或 OpenAI
 # LLM_PROVIDER=openai
